@@ -674,6 +674,12 @@ class GuitarEngine {
       case 'touch': this.touchString(ev); break;
       case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
       case 'tap': this.tap(ev); break;
+      case 'palm':   // the palm lands on (or lifts from) the strings near the bridge, ringing ones included
+        for (const st of this.strings) for (const v of st.voices) {
+          if (ev.on) { if (v.extraTarget < 9) { v.extraTarget = 9; v.extraRate = 0.5; v.palmed = true; } }
+          else if (v.palmed) { v.palmed = false; if (v.extraTarget === 9) { v.extraTarget = 0; v.extraRate = 0.3; } }
+        }
+        break;
       case 'friction': this.friction(ev); break;
       case 'glide': this.glide(ev); break;
       case 'hammer': this.legatoNote(ev, true); break;

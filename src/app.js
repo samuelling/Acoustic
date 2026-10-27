@@ -567,14 +567,27 @@ function noteOff(midi) {
 
 // ---------- computer keyboard ----------
 const downKeys = new Map();
+function keyOf(e) {
+  const c = e.code || '';
+  if (/^Key[A-Z]$/.test(c)) return c.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(c)) return c.slice(5);
+  const m = { Semicolon: ';', BracketLeft: '[', BracketRight: ']', Space: ' ', ShiftLeft: 'shift', ShiftRight: 'shift', Quote: "'" };
+  return m[c] || (e.key || '').toLowerCase();
+}
+// Palm mute: the palm also settles on strings already ringing (and lifts off again), as a real palm would
+function setPalm(on) {
+  strum.set({ palm: on }); $('palm').setAttribute('aria-pressed', on);
+  send([{ type: 'palm', on, t: engineTime() }]);
+}
 function bindQwerty() {
   window.addEventListener('keydown', async (e) => {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const k = e.key.toLowerCase();
+    // the physical key (e.code), so Shift (palm mute) doesn't turn '1' into '!' or ';' into ':'
+    const k = keyOf(e);
     if (e.repeat) { if (QWERTY.includes(k) || k === ' ') e.preventDefault(); return; }
     if (k === ' ') { e.preventDefault(); strum.setSustain(true); return; }
-    if (k === 'shift') { strum.set({ palm: true }); $('palm').setAttribute('aria-pressed', true); return; }
+    if (k === 'shift') { setPalm(true); return; }
     if (k === 'z') { shiftOct(-12); return; }
     if (k === 'x') { shiftOct(12); return; }
     if (k === '[') { padStrum(1); return; }
@@ -588,9 +601,9 @@ function bindQwerty() {
     noteOn(midi, +$('keyvel').value / 100);
   });
   window.addEventListener('keyup', (e) => {
-    const k = e.key.toLowerCase();
+    const k = keyOf(e);
     if (k === ' ') { strum.setSustain(false); return; }
-    if (k === 'shift') { strum.set({ palm: false }); $('palm').setAttribute('aria-pressed', false); return; }
+    if (k === 'shift') { setPalm(false); return; }
     if (downKeys.has(k)) { noteOff(downKeys.get(k)); downKeys.delete(k); }
   });
   window.addEventListener('blur', () => { for (const [, m] of downKeys) noteOff(m); downKeys.clear(); });
@@ -638,7 +651,7 @@ function onMidi(e) {
     else if (d1 === 5) { const v = Math.round(100 - d2 / 127 * 100); $('slidespeed').value = v; sliders.slidespeed.apply(v); $('slidespeedOut').textContent = sliders.slidespeed.out(v); }   // portamento time
     else if (d1 === 65) setLegato(d2 >= 64 ? 'auto' : 'off');   // portamento on/off
     else if (d1 === 68) strum.legatoForce = d2 >= 64 ? 'slide' : null;   // legato pedal: slide while held
-    else if (d1 === 67) { strum.set({ palm: d2 >= 64 }); $('palm').setAttribute('aria-pressed', d2 >= 64); }
+    else if (d1 === 67) setPalm(d2 >= 64);   // soft pedal: palm mute
     else if (d1 === 1) { const ms = Math.round(12 + (d2 / 127) * 70); $('speed').value = ms; $('speedOut').textContent = ms + ' ms'; strum.set({ speed: ms / 1000 }); }
     else if (d1 === 123 || d1 === 120) strum.allOff();
   } else if (cmd === 0xd0 || cmd === 0xa0) {
