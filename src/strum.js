@@ -349,7 +349,6 @@ class StrumEngine {
       const left = strs.filter(s => this.owner[s] === gid && !this.anyHeldOn(s));
       for (const s of left) evs.push({ type: 'damp', s, time: 0.05 + 0.04 * this.rng(), t: this.now() + 0.004 });
       const g = this.groups.get(gid);
-      if (g && g.frets) this.departure(evs, g.frets, left);
       this.send(evs);
     }, gid, quiet ? 0 : undefined);
   }
@@ -368,7 +367,6 @@ class StrumEngine {
     const evs = [];
     const left = [...g.strings].filter(s => this.owner[s] === id);
     for (const s of left) evs.push({ type: 'damp', s, time: 0.05 + 0.04 * this.rng(), t: this.now() + 0.004 + this.rng() * 0.01 });
-    if (g.frets) this.departure(evs, g.frets, left);
     this.send(evs);
     this.groups.delete(id);
   }
@@ -469,6 +467,8 @@ class StrumEngine {
   // Leaving a chord: fingers on wound strings drag a little along the winding as the hand lifts away (the pressure
   // fades out over the first part of the move). Where the hand goes next isn't known yet, and doesn't matter: the
   // sound depends on the strings under the fingers and the hand's speed.
+  // (not used: a finger lifting straight off a string makes no squeak, and a keyboard can't tell a lift from the
+  // start of a slide; kept for a future gesture input that can)
   departure(evs, frets, strings) {
     const skill = clamp(this.o.skill ?? 0.6, 0, 1), cand = strings.filter(s => s <= 3 && frets[s] > 0);
     let n = 0;
@@ -484,15 +484,15 @@ class StrumEngine {
   // place, slowing and pressing down just before the strum, so the squeak falls in pitch into the chord.
   arrival(evs, oldFrets, frets, t0) {
     const skill = clamp(this.o.skill ?? 0.6, 0, 1);
-    const both = [0, 1, 2, 3].filter(s => frets[s] > 0 && oldFrets[s] > 0 && frets[s] !== oldFrets[s]);
-    const cand = both.length ? both : [0, 1, 2, 3].filter(s => frets[s] > 0);
-    if (!cand.length || this.rng() > 0.3 + 0.4 * (1 - skill)) return;
+    // only a real shift (3+ frets) with a finger kept on its wound string; good players mostly lift clear
+    const cand = [0, 1, 2, 3].filter(s => frets[s] > 0 && oldFrets[s] > 0 && Math.abs(frets[s] - oldFrets[s]) >= 3);
+    if (!cand.length || this.rng() > 0.1 + 0.3 * (1 - skill)) return;
     const s = cand[Math.floor(this.rng() * cand.length)];
     const now = this.now(), tEnd = t0 + 0.018, span = Math.max(0.012, tEnd - now);   // fingers often finish landing as the pick arrives
     const dur = clamp(span / 0.45, 0.06, 0.22), seg = [Math.max(0, 1 - span / dur), 1];
     const from = oldFrets[s] > 0 ? oldFrets[s] : Math.max(1, frets[s] + (this.rng() < 0.5 ? -3 : 3));
     evs.push({ type: 'friction', s, x0: this.fingerX(from), x1: this.fingerX(frets[s]), dur, seg,
-      p0: 0.05, p1: (0.25 + 0.35 * this.rng()) * (1.3 - 0.5 * skill), t: Math.max(now, tEnd - span) });
+      p0: 0.03, p1: (0.12 + 0.18 * this.rng()) * (1.3 - 0.5 * skill), t: Math.max(now, tEnd - span) });
   }
   // Legato single notes: a new note while the previous one is still held (or just let go), up to 7 semitones away
   // on a string that can reach both, is a slide along that string rather than a new pluck.

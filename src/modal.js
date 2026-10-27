@@ -133,7 +133,7 @@ function esToShore(Es) {
 // Pitch of the outer winding (wrap-wire diameter), m, strings low E..G; plain strings have none. Steel: phosphor-bronze
 // 12-53 set; nylon: silver-plated copper basses (finer wire, higher squeak).
 const WIND_PITCH = { steel: [0.36e-3, 0.30e-3, 0.24e-3, 0.18e-3, 0, 0], nylon: [0.16e-3, 0.14e-3, 0.12e-3, 0, 0, 0] };
-let FRIC_GAIN = 0.25, FRIC_AIR = 0.02;    // axial force into the string; share heard straight from the fingertip
+let FRIC_GAIN = 0.1, FRIC_AIR = 0.004;   // axial force into the string; share heard straight from the fingertip
 const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip length beyond the fingers
 
 // Quasi-static release: the string (lateral stiffness Ks = T L / (x (L - x))) pushes on the pick face; the pick bends
@@ -852,9 +852,12 @@ class GuitarEngine {
         // one grab-and-release per wrap: the fingertip sinks into a groove and is pushed out by the next wire, a
         // smooth force pulse over ~40% of the passing period (a harmonic series at |v| / pitch). The spacing
         // wanders a little and every grab is a bit different.
-        ph0 += vel / pw / sr * (1 + 0.1 * (this.rng() - 0.5));
-        if (ph0 >= 1) { ph0 -= Math.floor(ph0); st.fricA = amt * pr * Math.pow(vel, 0.6) * (0.7 + 0.6 * this.rng()); }
-        if (ph0 < 0.4) f += (st.fricA || 0) * 0.5 * (1 - Math.cos(TAU * ph0 / 0.4)) * (1 + 0.15 * (this.rng() - 0.5));
+        // skin is soft and uneven and several ridges of the fingerprint ride the winding at once, so the grabs are
+        // irregular in spacing, width and strength: a rough rub with a pitch in it, not a clean buzz
+        ph0 += vel / pw / sr * (1 + 0.7 * (this.rng() - 0.5));
+        if (ph0 >= 1) { ph0 -= Math.floor(ph0); st.fricA = amt * pr * Math.pow(vel, 0.6) * (0.3 + 1.4 * this.rng()); st.fricW = 0.3 + 0.4 * this.rng(); }
+        const w = st.fricW || 0.4;
+        if (ph0 < w) f += (st.fricA || 0) * 0.5 * (1 - Math.cos(TAU * ph0 / w)) * (0.4 + 1.2 * this.rng());
       }
       // the smooth part of the rub: noise lowpassed at a cutoff that rises with speed
       const c = Math.min(0.9, (250 + 3500 * vel) * TAU / sr);
@@ -890,7 +893,7 @@ class GuitarEngine {
     }
     // the finger presses as it slides: a touch more damping, and the winding sings under it
     for (const vv of st.voices) { vv.extraTarget = Math.max(vv.extraTarget, 2.5); vv.extraRate = 0.3; }
-    this.friction({ s: ev.s, x0, x1, dur, seg: [0, 1], p0: ev.pressure ?? 0.8, p1: ev.pressure ?? 0.8, amt: 1.3 });
+    this.friction({ s: ev.s, x0, x1, dur, seg: [0, 1], p0: ev.pressure ?? 0.8, p1: ev.pressure ?? 0.8, amt: 0.8 });
   }
   fretStep(ev) {
     const st = this.strings[ev.s]; if (!st) return;
