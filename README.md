@@ -148,6 +148,30 @@ The ringing string keeps its motion and changes length at once; that is the lega
 - Phone: chord pads, ↓/↑ pads, or swipe across the strings (down the screen = downstroke). Tap the neck to fret a string.
 - Record captures the exact output to a 48 kHz WAV.
 
+## CPU
+
+Measured in Chromium (renderer process, % of one core):
+
+| Situation | Before | Now (Light) | Full |
+|---|---|---|---|
+| Idle, living room | 34% | 7% | — |
+| Travis pattern playing, living room | 42% | 28% | — |
+| Playing, stone church | 55% | 32% | 53% |
+| Playing, concert hall | 45% | 35% | 41% |
+
+- **Always on, no change in sound.**
+  - The neck view redraws only when something moves (at most ~30 fps; a still picture at 60 fps cost ~10%).
+  - The engine skips the body, radiation and mic work when every string is still, the body has rung out and nothing is queued: silence costs 0.2% instead of 9%.
+- **CPU: Light (default) / Full** (in *MIDI & recording*).
+  - Light caps reverb tails at 2.5 s with a fade. A 5-second church decay is already ~29 dB down by then, so what goes is the long, quiet tail after you stop.
+  - Light also feeds the guitar's back-side sound into the top-side reverb instead of a second one, and uses a 6-ridge finger contact instead of ~15 (same total force).
+  - Full restores 6 s tails, separate top/back reverbs and the full contact.
+- **Other costs**, measured on the engine alone in Node:
+  - a stereo mic pair +1.7%;
+  - sympathetic strings +1.1%;
+  - a slide in progress +5% (Full) while it lasts;
+  - Eco quality, picked automatically on slow devices, −2%.
+
 ## Calibration loop
 
 `test/` renders the same DSP code offline in Node and compares it with recordings of real guitars:

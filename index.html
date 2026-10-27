@@ -277,6 +277,8 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <h2>MIDI &amp; recording</h2>
       <div class="row wide"><label for="midiIn">Input</label><select id="midiIn"><option value="all">All inputs</option></select></div>
       <p class="note" id="midiNote">Connect a MIDI keyboard and it is picked up automatically. Mod wheel sets stroke time, sustain pedal lets strings ring, soft pedal (CC 67) palm-mutes, pitch bend bends strings ±2 semitones.</p>
+      <div class="row wide"><label for="cpuMode">CPU</label><select id="cpuMode"><option value="light">Light (recommended)</option><option value="full">Full detail</option></select></div>
+      <p class="note">Full detail adds reverb tails up to 6 s with separate reverbs for the guitar's top and back, and a finer finger-on-string contact. It roughly doubles the CPU used in large rooms.</p>
       <div class="rec-out" id="recOut"><span class="note">Record captures the guitar's exact output as a 48 kHz WAV.</span></div>
     </div>
   </section>
@@ -719,7 +721,7 @@ function buildIRs(scene, sr) {
   const held = scene.hold !== 'stand';
   const src = { front: pl.toRoom([0.12, 0, 0.0]), back: pl.toRoom([0.04, 0, -0.11]) };
   const rtMax = Math.max(...E.rt);
-  const dur = room.open ? 0.25 : Math.min(6, Math.max(0.3, rtMax * 1.15));
+  const dur = room.open ? 0.25 : Math.min(scene.maxDur || 6, 6, Math.max(0.3, rtMax * 1.15));   // maxDur: Light CPU mode caps the tail
   const N = Math.ceil(dur * sr) + FIRN;
   const tMix = room.open ? 0.25 : Math.min(0.12, Math.max(0.035, Math.sqrt(E.V) / 1000 * 1.6));
   const scat = room.scatter ?? 0.4;
@@ -828,6 +830,10 @@ function buildIRs(scene, sr) {
         for (let i = 0; i < NF; i++) { const k = o + i; if (k < N) buf[k] += o1[i] * win[i]; }
       }
     }
+  }
+  if (scene.maxDur && rtMax * 1.15 > scene.maxDur) {   // a capped tail fades out over its last 0.5 s instead of stopping
+    const nf = Math.min(N, Math.round(0.5 * sr));
+    for (const side of ['front', 'back']) for (const ch of out[side]) for (let i = 0; i < nf; i++) ch[N - nf + i] *= 0.5 + 0.5 * Math.cos(Math.PI * i / nf);
   }
   return out;
 }
@@ -1287,6 +1293,7 @@ class GuitarEngine {
       build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated', style: 'luthier' },
       scene: { mics: 'fret12', hold: 'seated' },
       pick: { type: 'cell71', angle: 20, grip: 'normal' },
+      cpu: 'light',                  // 'light' | 'full' (detailed finger contact; the app also uses it for the reverb)
       fingerAmt: 1, fingerPress: 1   // finger-on-string sound: level (1 = as measured in real recordings), pressure
     };
     this.bend = 0; this.bendTarget = 0;
@@ -1738,6 +1745,12 @@ class GuitarEngine {
       const fr = FINGER.ridgeHz * (0.8 + 0.4 * rng()), kt = 160, mt = kt / (TAU * fr) ** 2;
       ridges.push({ o, w, kt, mt, ct: 2 * (FRIC_MU[3] ?? 0.8) * Math.sqrt(kt * mt), y: 0, vy: 0, stick: true, h1: 0, h2: 0 });
     }
+    // Light CPU mode: at most 6 ridges, each standing for the ones it replaces (same total contact force)
+    if (this.params.cpu !== 'full' && ridges.length > 6) {
+      const keep = []; const step = ridges.length / 6;
+      for (let q = 0; q < 6; q++) { const r = ridges[Math.floor(q * step + step / 2)]; r.w *= step; keep.push(r); }
+      ridges.length = 0; ridges.push(...keep);
+    }
     const wsum = ridges.reduce((t, r) => t + r.w, 0) || 1;
     for (const r of ridges) r.w /= wsum;
     if (!this.fric) this.fric = [];
@@ -2038,7 +2051,12 @@ class GuitarEngine {
       // control-rate work every 64 samples
       const toCtl = 64 - (this.clock & 63);
       seg = Math.min(seg, toCtl);
-      this.renderSeg(outL, outR, offset + done, seg, outF, outB);
+      if (this.isQuiet(seg)) {
+        // nothing is sounding and nothing is about to: skip the body, radiation and mic work (costly even on silence)
+        outL.fill(0, offset + done, offset + done + seg); outR.fill(0, offset + done, offset + done + seg);
+        if (outF) outF.fill(0, offset + done, offset + done + seg); if (outB) outB.fill(0, offset + done, offset + done + seg);
+        this.regW = (this.regW + seg) % this.RL; this.clock += seg;
+      } else this.renderSeg(outL, outR, offset + done, seg, outF, outB);
       done += seg;
       if ((this.clock & 63) === 0) this.control();
     }
@@ -2204,6 +2222,23 @@ class GuitarEngine {
       }
     }
     this.clock += n;
+  }
+
+  // True when every string is still, no finger gesture runs, the body has rung out and nothing is queued in the
+  // force buffers for the next `n` samples. Checked per segment; the body's energy is checked every 64 samples.
+  isQuiet(n) {
+    if (this.fric && this.fric.length) return false;
+    for (const s of this.strings) for (const v of s.voices) if (v.nact) return false;
+    if (Math.abs(this.staticZ) + Math.abs(this.staticY) > 1e-7) return false;
+    const t0 = this.clock, M = this.RMASK;
+    for (let i = 0; i < n; i++) { const k = (t0 + i) & M; if (this.bodyIn[k] !== 0 || this.dirL[k] !== 0 || this.dirR[k] !== 0) return false; }
+    if ((this.clock & 63) === 0 || this.bodyQuiet === undefined) {
+      const B = this.body; let e = 0;
+      for (let q = 0; q < B.nr; q++) e += B.z1[q] * B.z1[q] + B.z2[q] * B.z2[q];
+      let r = 0; for (let k = 0; k < 7; k++) r += Math.abs(this.regHP[k]);
+      this.bodyQuiet = e < 1e-16 && r < 1e-9 && Math.abs(this.dcL) + Math.abs(this.dcR) < 1e-7;
+    }
+    return this.bodyQuiet;
   }
 
   // Direct-path coefficients for the current mics, from the scene (AcousticSpace when present)
@@ -3351,7 +3386,7 @@ function send(evs) {
 }
 function setEngine(params) { send([{ type: 'params', params, t: engineTime() }]); }
 
-const strum = new StrumEngine({ send, now: engineTime, onVoicing: (f) => { shape = f.slice(); $('shapeText').textContent = shapeLabel(shape); } });
+const strum = new StrumEngine({ send, now: engineTime, onVoicing: (f) => { shape = f.slice(); $('shapeText').textContent = shapeLabel(shape); if (typeof markNeck === 'function') markNeck(); } });
 
 // Rough device benchmark: render a worst-case second (two overlapping full strums) on the main thread.
 let quality = 'high';
@@ -3404,7 +3439,7 @@ async function start() {
   src.connect(split);
   split.connect(merge, 0, 0); split.connect(merge, 1, 1);
   merge.connect(dryGain);
-  split.connect(convF, 2); split.connect(convB, 3);
+  splitNode = split; wireRoom();
   convF.connect(wetGain); convB.connect(wetGain);
   dryGain.connect(master); wetGain.connect(master); master.connect(limiter); limiter.connect(ctx.destination);
   try { await setupRecorder(limiter); } catch (e) { $('recBtn').disabled = true; }
@@ -3448,10 +3483,24 @@ function ensureWorker() {
   } catch (e) { irWorker = null; }
   return irWorker;
 }
+// CPU mode. Light (default): reverb tails capped at 2.5 s, one reverb for both sides of the guitar (the back-side
+// feed joins the top-side one), a 6-ridge finger contact. Full: tails to 6 s, separate top/back reverbs, ~15 ridges.
+let cpuMode = store.get('o.cpu', 'light'), splitNode = null;
+function wireRoom() {
+  if (!splitNode) return;
+  try { splitNode.disconnect(convF); } catch (e) {} try { splitNode.disconnect(convB); } catch (e) {}
+  splitNode.connect(convF, 2);
+  if (cpuMode === 'full') splitNode.connect(convB, 3); else splitNode.connect(convF, 3);
+}
+function setCpu(m) {
+  cpuMode = m; store.set('o.cpu', m); $('cpuMode').value = m;
+  setEngine({ cpu: m }); wireRoom(); rebuildRoom();
+}
 function applyIR(d) {
   if (!ctx) return;
   const mk = (a, b) => { const buf = ctx.createBuffer(2, a.length, ctx.sampleRate); buf.copyToChannel(a, 0); buf.copyToChannel(b, 1); return buf; };
-  convF.buffer = mk(d.bufs[0], d.bufs[1]); convB.buffer = mk(d.bufs[2], d.bufs[3]);
+  convF.buffer = mk(d.bufs[0], d.bufs[1]);
+  convB.buffer = cpuMode === 'full' ? mk(d.bufs[2], d.bufs[3]) : null;   // Light: the back-side reverb isn't used
   roomStats = { rt: d.rt, V: d.V };
   drawRoomMap();
 }
@@ -3461,7 +3510,7 @@ function rebuildRoom() {
   clearTimeout(roomTimer);
   roomTimer = setTimeout(() => {
     if (!ctx) return;
-    const w = ensureWorker(), sc = sceneObject();
+    const w = ensureWorker(), sc = Object.assign(sceneObject(), cpuMode === 'full' ? {} : { maxDur: 2.5 });
     if (w) { if (irBusy) { irPending = true; return; } irBusy = true; w.postMessage({ id: ++irSeq, scene: sc, sr: ctx.sampleRate }); }
     else { const ir = SP().buildIRs(sc, ctx.sampleRate); applyIR({ bufs: [ir.front[0], ir.front[1], ir.back[0], ir.back[1]], rt: ir.rt, V: ir.V }); }
   }, 120);
@@ -3585,7 +3634,7 @@ function bindSliders() {
 }
 function applyAll() {
   for (const id in sliders) sliders[id].apply(+$(id).value);
-  setEngine({ preset: $('preset').value, tuning, capo, quality });
+  setEngine({ preset: $('preset').value, tuning, capo, quality, cpu: cpuMode });
   applyScene(); applyPick();
 }
 function bindSegs() {
@@ -3642,6 +3691,7 @@ function applyPick() {
 }
 // legato: overlapping single notes become hammer-ons, pull-offs or slides (see StrumEngine.tryGlide)
 function setLegato(m) { $('legatoMode').value = m; strum.set({ legato: m }); store.set('o.legatoMode', m); }
+function bindCpu() { $('cpuMode').value = cpuMode; $('cpuMode').addEventListener('change', () => setCpu($('cpuMode').value)); }
 function bindLegato() {
   $('legatoMode').addEventListener('change', () => setLegato($('legatoMode').value));
   setLegato(store.get('o.legatoMode', 'auto'));
@@ -3979,9 +4029,18 @@ function geom() {
   const fx = (f) => nutX + scale * (1 - Math.pow(2, -f / 12));
   return { nutX, neckEnd, scale, top, bot, sy, fx, saddle: nutX + scale * 0.985 };
 }
+// Redraw only when something moves (a vibrating string, a flash, an interaction), at most ~30 times a second;
+// otherwise twice a second in case something changed (redrawing a still picture 60 times a second cost ~10% CPU)
+let lastDraw = -1e9, neckDirty = true;
+const markNeck = () => { neckDirty = true; };
+['pointerdown', 'pointermove', 'keydown', 'resize'].forEach(ev => window.addEventListener(ev, markNeck, { passive: true }));
 function draw(ts) {
   requestAnimationFrame(draw);
   if (!W) return;
+  const active = flash.some(f => f > 0.01) || meters.some(m => m && m.e > 0.002);
+  if (!(active || neckDirty) && ts - lastDraw < 500) return;
+  if (ts - lastDraw < 31) return;
+  lastDraw = ts; neckDirty = false;
   const G = geom();
   g2.setTransform(dpr, 0, 0, dpr, 0, 0);
   g2.clearRect(0, 0, W, H);
@@ -4110,7 +4169,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); bindLegato(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); bindLegato(); bindCpu(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });

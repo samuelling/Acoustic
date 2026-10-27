@@ -435,6 +435,7 @@ class GuitarEngine {
       build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated', style: 'luthier' },
       scene: { mics: 'fret12', hold: 'seated' },
       pick: { type: 'cell71', angle: 20, grip: 'normal' },
+      cpu: 'light',                  // 'light' | 'full' (detailed finger contact; the app also uses it for the reverb)
       fingerAmt: 1, fingerPress: 1   // finger-on-string sound: level (1 = as measured in real recordings), pressure
     };
     this.bend = 0; this.bendTarget = 0;
@@ -886,6 +887,12 @@ class GuitarEngine {
       const fr = FINGER.ridgeHz * (0.8 + 0.4 * rng()), kt = 160, mt = kt / (TAU * fr) ** 2;
       ridges.push({ o, w, kt, mt, ct: 2 * (FRIC_MU[3] ?? 0.8) * Math.sqrt(kt * mt), y: 0, vy: 0, stick: true, h1: 0, h2: 0 });
     }
+    // Light CPU mode: at most 6 ridges, each standing for the ones it replaces (same total contact force)
+    if (this.params.cpu !== 'full' && ridges.length > 6) {
+      const keep = []; const step = ridges.length / 6;
+      for (let q = 0; q < 6; q++) { const r = ridges[Math.floor(q * step + step / 2)]; r.w *= step; keep.push(r); }
+      ridges.length = 0; ridges.push(...keep);
+    }
     const wsum = ridges.reduce((t, r) => t + r.w, 0) || 1;
     for (const r of ridges) r.w /= wsum;
     if (!this.fric) this.fric = [];
@@ -1186,7 +1193,12 @@ class GuitarEngine {
       // control-rate work every 64 samples
       const toCtl = 64 - (this.clock & 63);
       seg = Math.min(seg, toCtl);
-      this.renderSeg(outL, outR, offset + done, seg, outF, outB);
+      if (this.isQuiet(seg)) {
+        // nothing is sounding and nothing is about to: skip the body, radiation and mic work (costly even on silence)
+        outL.fill(0, offset + done, offset + done + seg); outR.fill(0, offset + done, offset + done + seg);
+        if (outF) outF.fill(0, offset + done, offset + done + seg); if (outB) outB.fill(0, offset + done, offset + done + seg);
+        this.regW = (this.regW + seg) % this.RL; this.clock += seg;
+      } else this.renderSeg(outL, outR, offset + done, seg, outF, outB);
       done += seg;
       if ((this.clock & 63) === 0) this.control();
     }
@@ -1352,6 +1364,23 @@ class GuitarEngine {
       }
     }
     this.clock += n;
+  }
+
+  // True when every string is still, no finger gesture runs, the body has rung out and nothing is queued in the
+  // force buffers for the next `n` samples. Checked per segment; the body's energy is checked every 64 samples.
+  isQuiet(n) {
+    if (this.fric && this.fric.length) return false;
+    for (const s of this.strings) for (const v of s.voices) if (v.nact) return false;
+    if (Math.abs(this.staticZ) + Math.abs(this.staticY) > 1e-7) return false;
+    const t0 = this.clock, M = this.RMASK;
+    for (let i = 0; i < n; i++) { const k = (t0 + i) & M; if (this.bodyIn[k] !== 0 || this.dirL[k] !== 0 || this.dirR[k] !== 0) return false; }
+    if ((this.clock & 63) === 0 || this.bodyQuiet === undefined) {
+      const B = this.body; let e = 0;
+      for (let q = 0; q < B.nr; q++) e += B.z1[q] * B.z1[q] + B.z2[q] * B.z2[q];
+      let r = 0; for (let k = 0; k < 7; k++) r += Math.abs(this.regHP[k]);
+      this.bodyQuiet = e < 1e-16 && r < 1e-9 && Math.abs(this.dcL) + Math.abs(this.dcR) < 1e-7;
+    }
+    return this.bodyQuiet;
   }
 
   // Direct-path coefficients for the current mics, from the scene (AcousticSpace when present)

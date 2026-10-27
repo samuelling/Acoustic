@@ -26,7 +26,7 @@ function send(evs) {
 }
 function setEngine(params) { send([{ type: 'params', params, t: engineTime() }]); }
 
-const strum = new StrumEngine({ send, now: engineTime, onVoicing: (f) => { shape = f.slice(); $('shapeText').textContent = shapeLabel(shape); } });
+const strum = new StrumEngine({ send, now: engineTime, onVoicing: (f) => { shape = f.slice(); $('shapeText').textContent = shapeLabel(shape); if (typeof markNeck === 'function') markNeck(); } });
 
 // Rough device benchmark: render a worst-case second (two overlapping full strums) on the main thread.
 let quality = 'high';
@@ -79,7 +79,7 @@ async function start() {
   src.connect(split);
   split.connect(merge, 0, 0); split.connect(merge, 1, 1);
   merge.connect(dryGain);
-  split.connect(convF, 2); split.connect(convB, 3);
+  splitNode = split; wireRoom();
   convF.connect(wetGain); convB.connect(wetGain);
   dryGain.connect(master); wetGain.connect(master); master.connect(limiter); limiter.connect(ctx.destination);
   try { await setupRecorder(limiter); } catch (e) { $('recBtn').disabled = true; }
@@ -123,10 +123,24 @@ function ensureWorker() {
   } catch (e) { irWorker = null; }
   return irWorker;
 }
+// CPU mode. Light (default): reverb tails capped at 2.5 s, one reverb for both sides of the guitar (the back-side
+// feed joins the top-side one), a 6-ridge finger contact. Full: tails to 6 s, separate top/back reverbs, ~15 ridges.
+let cpuMode = store.get('o.cpu', 'light'), splitNode = null;
+function wireRoom() {
+  if (!splitNode) return;
+  try { splitNode.disconnect(convF); } catch (e) {} try { splitNode.disconnect(convB); } catch (e) {}
+  splitNode.connect(convF, 2);
+  if (cpuMode === 'full') splitNode.connect(convB, 3); else splitNode.connect(convF, 3);
+}
+function setCpu(m) {
+  cpuMode = m; store.set('o.cpu', m); $('cpuMode').value = m;
+  setEngine({ cpu: m }); wireRoom(); rebuildRoom();
+}
 function applyIR(d) {
   if (!ctx) return;
   const mk = (a, b) => { const buf = ctx.createBuffer(2, a.length, ctx.sampleRate); buf.copyToChannel(a, 0); buf.copyToChannel(b, 1); return buf; };
-  convF.buffer = mk(d.bufs[0], d.bufs[1]); convB.buffer = mk(d.bufs[2], d.bufs[3]);
+  convF.buffer = mk(d.bufs[0], d.bufs[1]);
+  convB.buffer = cpuMode === 'full' ? mk(d.bufs[2], d.bufs[3]) : null;   // Light: the back-side reverb isn't used
   roomStats = { rt: d.rt, V: d.V };
   drawRoomMap();
 }
@@ -136,7 +150,7 @@ function rebuildRoom() {
   clearTimeout(roomTimer);
   roomTimer = setTimeout(() => {
     if (!ctx) return;
-    const w = ensureWorker(), sc = sceneObject();
+    const w = ensureWorker(), sc = Object.assign(sceneObject(), cpuMode === 'full' ? {} : { maxDur: 2.5 });
     if (w) { if (irBusy) { irPending = true; return; } irBusy = true; w.postMessage({ id: ++irSeq, scene: sc, sr: ctx.sampleRate }); }
     else { const ir = SP().buildIRs(sc, ctx.sampleRate); applyIR({ bufs: [ir.front[0], ir.front[1], ir.back[0], ir.back[1]], rt: ir.rt, V: ir.V }); }
   }, 120);
@@ -260,7 +274,7 @@ function bindSliders() {
 }
 function applyAll() {
   for (const id in sliders) sliders[id].apply(+$(id).value);
-  setEngine({ preset: $('preset').value, tuning, capo, quality });
+  setEngine({ preset: $('preset').value, tuning, capo, quality, cpu: cpuMode });
   applyScene(); applyPick();
 }
 function bindSegs() {
@@ -317,6 +331,7 @@ function applyPick() {
 }
 // legato: overlapping single notes become hammer-ons, pull-offs or slides (see StrumEngine.tryGlide)
 function setLegato(m) { $('legatoMode').value = m; strum.set({ legato: m }); store.set('o.legatoMode', m); }
+function bindCpu() { $('cpuMode').value = cpuMode; $('cpuMode').addEventListener('change', () => setCpu($('cpuMode').value)); }
 function bindLegato() {
   $('legatoMode').addEventListener('change', () => setLegato($('legatoMode').value));
   setLegato(store.get('o.legatoMode', 'auto'));
@@ -654,9 +669,18 @@ function geom() {
   const fx = (f) => nutX + scale * (1 - Math.pow(2, -f / 12));
   return { nutX, neckEnd, scale, top, bot, sy, fx, saddle: nutX + scale * 0.985 };
 }
+// Redraw only when something moves (a vibrating string, a flash, an interaction), at most ~30 times a second;
+// otherwise twice a second in case something changed (redrawing a still picture 60 times a second cost ~10% CPU)
+let lastDraw = -1e9, neckDirty = true;
+const markNeck = () => { neckDirty = true; };
+['pointerdown', 'pointermove', 'keydown', 'resize'].forEach(ev => window.addEventListener(ev, markNeck, { passive: true }));
 function draw(ts) {
   requestAnimationFrame(draw);
   if (!W) return;
+  const active = flash.some(f => f > 0.01) || meters.some(m => m && m.e > 0.002);
+  if (!(active || neckDirty) && ts - lastDraw < 500) return;
+  if (ts - lastDraw < 31) return;
+  lastDraw = ts; neckDirty = false;
   const G = geom();
   g2.setTransform(dpr, 0, 0, dpr, 0, 0);
   g2.clearRect(0, 0, W, H);
@@ -785,7 +809,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); bindLegato(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); bindLegato(); bindCpu(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });

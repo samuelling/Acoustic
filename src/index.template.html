@@ -132,6 +132,8 @@
       <h2>MIDI &amp; recording</h2>
       <div class="row wide"><label for="midiIn">Input</label><select id="midiIn"><option value="all">All inputs</option></select></div>
       <p class="note" id="midiNote">Connect a MIDI keyboard and it is picked up automatically. Mod wheel sets stroke time, sustain pedal lets strings ring, soft pedal (CC 67) palm-mutes, pitch bend bends strings ±2 semitones.</p>
+      <div class="row wide"><label for="cpuMode">CPU</label><select id="cpuMode"><option value="light">Light (recommended)</option><option value="full">Full detail</option></select></div>
+      <p class="note">Full detail adds reverb tails up to 6 s with separate reverbs for the guitar's top and back, and a finer finger-on-string contact. It roughly doubles the CPU used in large rooms.</p>
       <div class="rec-out" id="recOut"><span class="note">Record captures the guitar's exact output as a 48 kHz WAV.</span></div>
     </div>
   </section>

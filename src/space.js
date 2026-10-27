@@ -415,7 +415,7 @@ function buildIRs(scene, sr) {
   const held = scene.hold !== 'stand';
   const src = { front: pl.toRoom([0.12, 0, 0.0]), back: pl.toRoom([0.04, 0, -0.11]) };
   const rtMax = Math.max(...E.rt);
-  const dur = room.open ? 0.25 : Math.min(6, Math.max(0.3, rtMax * 1.15));
+  const dur = room.open ? 0.25 : Math.min(scene.maxDur || 6, 6, Math.max(0.3, rtMax * 1.15));   // maxDur: Light CPU mode caps the tail
   const N = Math.ceil(dur * sr) + FIRN;
   const tMix = room.open ? 0.25 : Math.min(0.12, Math.max(0.035, Math.sqrt(E.V) / 1000 * 1.6));
   const scat = room.scatter ?? 0.4;
@@ -524,6 +524,10 @@ function buildIRs(scene, sr) {
         for (let i = 0; i < NF; i++) { const k = o + i; if (k < N) buf[k] += o1[i] * win[i]; }
       }
     }
+  }
+  if (scene.maxDur && rtMax * 1.15 > scene.maxDur) {   // a capped tail fades out over its last 0.5 s instead of stopping
+    const nf = Math.min(N, Math.round(0.5 * sr));
+    for (const side of ['front', 'back']) for (const ch of out[side]) for (let i = 0; i < nf; i++) ch[N - nf + i] *= 0.5 + 0.5 * Math.cos(Math.PI * i / nf);
   }
   return out;
 }
