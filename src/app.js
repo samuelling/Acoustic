@@ -232,6 +232,9 @@ const sliders = {
   updepth: { out: v => v, apply: v => strum.set({ upDepth: v / 100 }) },
   gather: { out: v => v + ' ms', apply: v => strum.set({ gather: v / 1000 }) },
   keyvel: { out: v => v, apply: () => {} },
+  bpm: { out: v => v, apply: v => strum.set({ bpm: v }) },
+  skill: { out: v => v, apply: v => strum.set({ skill: v / 100 }) },
+  brushes: { out: v => v + '%', apply: v => strum.set({ brushes: v / 100 }) },
   capo: { out: v => +v ? 'fret ' + v : 'none', apply: v => { capo = +v; strum.set({ capo }); setEngine({ capo }); } },
   pickpos: { out: v => v + '%', apply: v => strum.set({ pickPos: v / 100 }) },
   bright: { out: v => v < 25 ? 'dead' : v < 50 ? 'played in' : v < 80 ? 'fresh' : 'new', apply: v => setEngine({ brightness: v / 100 }) },
@@ -264,6 +267,7 @@ function bindSegs() {
     const set = (v) => {
       seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
       strum.set({ [opt]: v }); store.set('o.' + opt, v);
+      if (opt === 'mode') { $('patternCtl').hidden = v !== 'pattern'; if (v !== 'pattern' && strum.hand) strum.hand.stop(); }
     };
     seg.querySelectorAll('button').forEach(b => { b.type = 'button'; b.addEventListener('click', () => set(b.dataset.v)); });
     set(val);
@@ -299,6 +303,24 @@ function applyPick() {
   const M = guitarPickModel, P = GUITAR_PICKS;
   const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
   strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
+}
+function bindHandStyle() {
+  fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
+  strum.set({ style: $('handStyle').value });
+  $('handStyle').addEventListener('change', () => { strum.set({ style: $('handStyle').value }); store.set('o.style', $('handStyle').value); });
+}
+// MIDI clock (24 per quarter note): tempo from the spacing of the last 24 ticks; Start realigns the pattern grid
+const clockTicks = [];
+function onClock(st, ts) {
+  if (st === 0xfa) { clockTicks.length = 0; if (strum.hand && strum.hand.running) strum.hand.realign(engineTime()); return; }
+  if (st !== 0xf8) return;
+  clockTicks.push(ts); if (clockTicks.length > 25) clockTicks.shift();
+  if (clockTicks.length === 25) {
+    const bpm = 60000 / (clockTicks[24] - clockTicks[0]);
+    if (bpm > 30 && bpm < 300 && Math.abs(bpm - (strum.o.bpm || 0)) > 0.3) {
+      strum.set({ bpm }); $('bpm').value = Math.round(bpm); $('bpmOut').textContent = Math.round(bpm) + ' (clock)';
+    }
+  }
 }
 function bindPick() {
   fillSelect('pickType', Object.entries(GUITAR_PICKS).map(([k, v]) => [k, v.name]), pick.type);
@@ -418,6 +440,19 @@ function renderChords() {
 }
 async function playChordPad(name, dir) {
   await start();
+  // Pattern mode: a pad latches the right hand's pattern on that chord; tapping the playing chord again stops it
+  if (strum.o.mode === 'pattern' && strum.hand) {
+    if (strum.hand.running && activeChord === name) {
+      strum.hand.stop(); activeChord = null;
+      document.querySelectorAll('.chord').forEach(c => c.classList.remove('on'));
+      return;
+    }
+    activeChord = name;
+    document.querySelectorAll('.chord').forEach(c => c.classList.toggle('on', c.firstChild.textContent === name));
+    strum.setShape(CHORD_SHAPES[name].slice());
+    strum.hand.chord({ frets: strum.shape }, +$('keyvel').value / 100, engineTime() + 0.01);
+    return;
+  }
   activeChord = name;
   document.querySelectorAll('.chord').forEach(c => c.classList.toggle('on', c.firstChild.textContent === name));
   const f = CHORD_SHAPES[name].slice();
@@ -552,6 +587,7 @@ function onMidi(e) {
   const sel = $('midiIn').value;
   if (sel !== 'all' && e.target.id !== sel) return;
   const [st, d1, d2] = e.data; const cmd = st & 0xf0;
+  if (st >= 0xf8) { onClock(st, e.timeStamp); return; }
   const t = ctx ? ctx.currentTime + Math.min(0, (e.timeStamp - performance.now()) / 1000) : undefined;
   if (cmd === 0x90 && d2 > 0) { start(); noteOn(d1, Math.pow(d2 / 127, 0.9), t); }
   else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) noteOff(d1);
@@ -715,7 +751,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); bindSpace(); bindPick(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });

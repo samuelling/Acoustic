@@ -53,7 +53,14 @@
     <div class="group">
       <h2>Hand</h2>
       <p class="hint">How the notes you play become a guitarist's motion.</p>
-      <div class="row wide"><label>Technique</label><div class="seg" data-opt="mode"><button data-v="pick">Pick strum</button><button data-v="finger">Fingerstyle</button></div></div>
+      <div class="row wide"><label>Technique</label><div class="seg" data-opt="mode"><button data-v="pick">Pick strum</button><button data-v="finger">Fingerstyle</button><button data-v="pattern">Pattern</button></div></div>
+      <div id="patternCtl" class="sub-ctl">
+        <div class="row wide"><label for="handStyle">Style</label><select id="handStyle"></select></div>
+        <div class="row"><label for="bpm">Tempo</label><input id="bpm" type="range" min="40" max="220" value="96"><output id="bpmOut">96</output></div>
+        <div class="row"><label for="skill">Player skill</label><input id="skill" type="range" min="0" max="100" value="60"><output id="skillOut">60</output></div>
+        <div class="row"><label for="brushes">Stray contacts</label><input id="brushes" type="range" min="0" max="200" value="100"><output id="brushesOut">100%</output></div>
+        <p class="note">Hold a chord and the right hand plays the style. The tempo follows MIDI clock when one is sent. The sustain pedal keeps the pattern going after you let go.</p>
+      </div>
       <div class="row wide"><label>Voicing</label><div class="seg" data-opt="voicing"><button data-v="played">As played</button><button data-v="guitarize">Guitar shape</button></div></div>
       <div class="row wide"><label>Direction</label><div class="seg" data-opt="direction"><button data-v="auto">Auto</button><button data-v="down">Down</button><button data-v="up">Up</button><button data-v="alternate">Alternate</button></div></div>
       <div class="row wide"><label for="pickType">Pick</label><select id="pickType"></select></div>

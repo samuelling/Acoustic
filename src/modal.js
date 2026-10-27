@@ -624,6 +624,9 @@ class GuitarEngine {
         if (!ev._staged) { ev._staged = true; const pre = this.preScrape(ev); if (pre > 0) { ev.t = null; ev._at = this.clock + pre; this.post2(ev); break; } }
         this.pluck(ev); break;
       case 'damp': this.dampString(ev); break;
+      case 'touch': this.touchString(ev); break;
+      case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
+      case 'tap': this.tap(ev); break;
       case 'squeak': this.squeak(ev); break;
       case 'bend': this.bendTarget = ev.value; break;
       case 'params': this.setParams(ev.params); break;
@@ -683,7 +686,10 @@ class GuitarEngine {
     }
     else if (style === 'thumb') { tau = 1.1e-3 * (1.4 - 0.6 * vel); width = 0.012; theta = 0.5 + 0.2 * this.rng(); }
     else { tau = 6e-4 * (1.4 - 0.6 * vel); width = 0.008; theta = 0.65 + 0.25 * this.rng(); }
-    if (this.params.preset === 'classical' && style !== 'pick') tau *= 0.5; // nails
+    if (style !== 'pick' && (ev.nail ?? this.params.preset === 'classical')) tau *= 0.5; // nails
+    // rest stroke (apoyando): the finger pushes the string toward the top and stops on the next string, so more of
+    // the motion is perpendicular to the top (louder, shorter, rounder); a free stroke pulls it more along the top
+    if (ev.rest && style !== 'pick') theta = Math.min(1.35, theta + 0.4);
     if (pm) h *= Math.min(2, Math.max(0.3, pm.rel.d));
     if (ev.bright != null) tau /= Math.max(0.2, ev.bright);
     if (ev.dead) tau *= 2;
@@ -761,6 +767,31 @@ class GuitarEngine {
       if (y1 * y1 + y2 * y2 > 2e-15) v.act[n++] = c;
     }
     v.nact = n;
+  }
+
+  // A finger (or palm) touching a string for a moment: planting before a pluck, a rest stroke landing on its
+  // neighbour, an accidental graze. Damping for `dur` seconds, then the finger leaves; a soft contact noise.
+  touchString(ev) {
+    const s = this.strings[ev.s]; if (!s) return;
+    const amt = ev.amt == null ? 30 : ev.amt, dur = ev.dur == null ? 0.08 : ev.dur;
+    s.touchId = (s.touchId || 0) + 1;
+    for (const v of s.voices) { v.extraTarget = Math.max(v.extraTarget, amt); v.extraRate = 0.6; }
+    this.post2({ type: 'untouch', s: ev.s, id: s.touchId, _at: this.clock + Math.round(dur * this.sr), _staged: true });
+    const na = this.params.noise * 0.02 * Math.min(1, s.env * 10 + 0.15) * (ev.nail ? 1.6 : 1);
+    if (na > 1e-4) {
+      const at = this.clock & this.RMASK; let p = 0;
+      for (let k = 0; k < 240; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * na * Math.exp(-k / 50); p = r; }
+    }
+  }
+
+  // Golpe: a finger or nail tapping the top near the bridge. A half-sine force pulse into the body (flesh ~4 ms,
+  // nail ~1.5 ms with a click), so the body's own modes ring.
+  tap(ev) {
+    const sr = this.sr, vel = Math.max(0.05, Math.min(1, ev.vel ?? 0.7));
+    const dur = (ev.nail ? 0.0015 : 0.004) * (1.2 - 0.4 * vel), n = Math.max(4, Math.round(dur * sr));
+    const F = (ev.amt ?? 1) * 2.5 * vel, at = this.clock & this.RMASK;
+    for (let k = 0; k < n; k++) this.bodyIn[(at + k) & this.RMASK] += F * Math.sin(Math.PI * (k + 0.5) / n);
+    if (ev.nail) { let p = 0; for (let k = 0; k < 120; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * 0.08 * vel * Math.exp(-k / 25); p = r; } }
   }
 
   dampString(ev) {
