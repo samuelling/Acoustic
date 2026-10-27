@@ -107,11 +107,18 @@ No sample or noise layer is added on top. The incidental sounds come from the ha
   - The string is stopped by whichever fret lies just ahead of the finger, so pitch moves in semitone steps as the finger crosses each wire. Steps are quick mid-move and slow at the ends, following the minimum-jerk path.
   - Each crossing loses a little energy and bumps the bridge.
   - The winding sings under the pressed finger.
+  - **Speed varies like a player's:**
+    - Longer slides take longer but cover more ground per second, roughly with the log of the distance.
+    - Press the new note harder and the slide snaps there; softly and it drifts: a 3-fret slide takes ~150 ms when struck firmly, ~270 ms when soft.
+    - Each slide differs from the last (log-normal spread, wider for a weaker player).
+    - In a running pattern slides scale with the tempo.
+    - The point of peak speed moves too: a snap rushes early and coasts in, a lazy slide starts slowly and arrives in a hurry (time-warped minimum-jerk, peak at 1/3–2/3 of the move).
+    - *Slide speed* sets the overall pace; MIDI CC5 (portamento time) controls it live and CC65 (portamento on/off) toggles legato slides.
   - This staircase is what separates a fretted glide from a slide guitar's continuous one.
 
 ## Controls
 
-- MIDI: notes, sustain (CC64 = let ring), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st).
+- MIDI: notes, sustain (CC64 = let ring / latch the pattern), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st), portamento time (CC5 = slide speed), portamento on/off (CC65 = legato slides), clock (pattern tempo).
 - Computer keys: `A W S E D F T G Y H U J K O L P ;` play notes, `Z`/`X` octave, `Space` sustain, `Shift` palm mute, `1`–`0` chord pads, `[` `]` down/up strum.
 - Phone: chord pads, ↓/↑ pads, or swipe across the strings (down the screen = downstroke). Tap the neck to fret a string.
 - Record captures the exact output to a 48 kHz WAV.

@@ -186,7 +186,7 @@ class StrumEngine {
     this.o = {
       mode: 'pick',          // 'pick' | 'finger' | 'pattern' (the right hand plays a style's pattern on held chords)
       style: 'travis', bpm: 96, skill: 0.6, brushes: 1,
-      legato: 'slide',       // overlapping single notes up to 7 semitones apart: 'slide' along the string | 'off'
+      legato: 'slide', slideSpeed: 1,   // slideSpeed: >1 faster slides, <1 slower (also MIDI CC5, portamento time)       // overlapping single notes up to 7 semitones apart: 'slide' along the string | 'off'
       voicing: 'played',     // 'played' | 'guitarize'
       direction: 'auto',     // 'auto' | 'down' | 'up' | 'alternate'
       speed: 0.055,          // seconds for a 6-string stroke at medium velocity (measured strums: 26-62 ms)
@@ -461,6 +461,8 @@ class StrumEngine {
     });
   }
 
+  gaussN() { return (this.rng() + this.rng() + this.rng() + this.rng() - 2) * 1.7321; }
+
   // ----- the fretting hand's own sounds -----
   // Position of a fingertip just behind fret f, metres from the nut.
   fingerX(f) { const L = 0.645, x = (k) => L * (1 - Math.pow(2, -k / 12)); return f <= 0 ? 0.004 : x(f) - 0.3 * (x(f) - x(f - 1)); }
@@ -505,8 +507,19 @@ class StrumEngine {
     const d = midi - ls.midi, fOld = ls.midi - open[ls.s], fNew = midi - open[ls.s];
     if (d === 0 || Math.abs(d) > 7 || fOld < 1 || fNew < 1 || fNew > MAXFRET) return false;
     const t = this.now() + 0.002, skill = clamp(this.o.skill ?? 0.6, 0, 1);
-    const dur = (0.07 + 0.022 * Math.abs(d)) * (1.15 - 0.3 * skill) * (0.85 + 0.3 * this.rng());
-    this.send([{ type: 'glide', s: ls.s, from: ls.midi, to: midi, dur, pressure: 0.6 + 0.3 * this.rng(), t }]);
+    // How long the slide takes:
+    //  - distance: longer slides take longer but cover ground faster (Fitts-like: ~log of the distance)
+    //  - how hard the new note is pressed: a firm press snaps there, a soft one drifts
+    //  - the player's chosen speed (slider / CC5), and in a running pattern the beat (slides scale with tempo)
+    //  - natural spread from slide to slide (log-normal, wider for a weaker player)
+    const vel = n.vel ?? 0.7, hum = (this.o.humanize ?? 0.6) / 0.6;
+    let dur = (0.055 + 0.075 * Math.log2(1 + Math.abs(d))) * (1.7 - 1.15 * vel) / Math.max(0.2, this.o.slideSpeed || 1);
+    if (this.hand && this.hand.running) dur *= clamp(96 / (this.o.bpm || 96), 0.6, 1.5);
+    dur *= Math.exp(this.gaussN() * (0.28 - 0.15 * skill) * hum) * (1.1 - 0.2 * skill);
+    dur = clamp(dur, 0.035, 0.9);
+    // where in the move the hand is fastest: a quick snap rushes early and coasts in; a lazy slide starts slowly
+    const skew = clamp(0.5 + 0.18 * (0.6 - vel) + 0.08 * this.gaussN() * hum, 0.33, 0.67);
+    this.send([{ type: 'glide', s: ls.s, from: ls.midi, to: midi, dur, skew, pressure: clamp(0.45 + 0.45 * vel + 0.1 * this.gaussN(), 0.3, 1), t }]);
     // the new key now owns the string; the old key's release no longer stops it
     if (ls.melody && this.hand) {
       this.melodyKeys.delete(ls.key); this.melodyKeys.set(n.midi, ls.s); this.hand.melody.set(ls.s, midi);

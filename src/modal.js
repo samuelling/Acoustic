@@ -875,7 +875,7 @@ class GuitarEngine {
     for (const r of ridges) r.w /= wsum;
     if (!this.fric) this.fric = [];
     this.fric.push({ s: ev.s, n, k: 0, seg, dur, x0: ev.x0 ?? 0.03, dx: (ev.x1 ?? 0.08) - (ev.x0 ?? 0.03),
-      p0: ev.p0 ?? 0.5, p1: ev.p1 ?? 0.5, amt, wound, pw, prof, slope, ridges,
+      p0: ev.p0 ?? 0.5, p1: ev.p1 ?? 0.5, amt, wound, pw, prof, slope, ridges, gam: ev.gam || 1,
       wearSeed: (ev.s + 1) * 7919, trF: 8 + 4 * rng(), trP: rng() * TAU, trA: 15e-6 + 25e-6 * rng(),
       // a corrective sub-movement near the end of the reach (Meyer et al. 1988), and the skin's grab-and-give
       subA: (rng() - 0.3) * 0.06, subC: 0.78 + 0.12 * rng(), vn: 0, vn2: 0, vnC: 1 - Math.exp(-TAU * 35 / (2 * sr)),
@@ -896,7 +896,8 @@ class GuitarEngine {
         for (let q = 0; q < OS; q++) {
           const u = (G.k + q / OS) / G.n, tau = G.seg[0] + (G.seg[1] - G.seg[0]) * u, tt = (G.k + q / OS) / sr;
           // minimum-jerk path plus tremor
-          const sm = 10 * tau ** 3 - 15 * tau ** 4 + 6 * tau ** 5, dsm = 30 * tau * tau * (1 - tau) * (1 - tau);
+          const tw = G.gam === 1 ? tau : Math.pow(tau, G.gam), dw = G.gam === 1 ? 1 : G.gam * Math.pow(Math.max(1e-6, tau), G.gam - 1);
+          const sm = 10 * tw ** 3 - 15 * tw ** 4 + 6 * tw ** 5, dsm = 30 * tw * tw * (1 - tw) * (1 - tw) * dw;
           const trem = Math.sin(TAU * G.trF * tt + G.trP);
           const zb = (tau - G.subC) / 0.12, bump = Math.exp(-zb * zb), dbump = -2 * zb / 0.12 * bump;
           G.vn += ((this.rng() * 2 - 1) - G.vn) * G.vnC; G.vn2 += (G.vn - G.vn2) * G.vnC;   // slow speed wobble
@@ -974,7 +975,9 @@ class GuitarEngine {
     const fingerAt = (k) => k <= 0 ? 0.005 : xf(k) - 0.3 * (xf(k) - xf(k - 1));
     const x0 = fingerAt(a), x1 = fingerAt(b), up = b > a;
     // when does the finger cross each wire? invert the minimum-jerk path numerically
-    const pos = (tau) => x0 + (x1 - x0) * (10 * tau ** 3 - 15 * tau ** 4 + 6 * tau ** 5);
+    // minimum-jerk path, time-warped so the hand's peak speed falls at `skew` of the move (0.5 = symmetric)
+    const gam = Math.log(0.5) / Math.log(Math.min(0.67, Math.max(0.33, ev.skew ?? 0.5)));
+    const pos = (t) => { const tau = Math.pow(t, gam); return x0 + (x1 - x0) * (10 * tau ** 3 - 15 * tau ** 4 + 6 * tau ** 5); };
     const base = v.shift || 0;
     for (let k = up ? a : a - 1; up ? k < b : k >= b; k += up ? 1 : -1) {
       const wire = xf(k);
@@ -985,7 +988,7 @@ class GuitarEngine {
     }
     // the finger presses as it slides: a touch more damping, and the winding sings under it
     for (const vv of st.voices) { vv.extraTarget = Math.max(vv.extraTarget, 2.5); vv.extraRate = 0.3; }
-    this.friction({ s: ev.s, x0, x1, dur, seg: [0, 1], p0: ev.pressure ?? 0.8, p1: ev.pressure ?? 0.8, amt: 0.8 });
+    this.friction({ s: ev.s, x0, x1, dur, seg: [0, 1], p0: ev.pressure ?? 0.8, p1: ev.pressure ?? 0.8, amt: 0.8, gam });
   }
   fretStep(ev) {
     const st = this.strings[ev.s]; if (!st) return;
