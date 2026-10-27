@@ -296,18 +296,31 @@ function fillSelect(id, entries, val) {
   el.value = val;
 }
 // ---------- pick ----------
-const pick = { type: store.get('pk.type', 'cell71'), grip: store.get('pk.grip', 'normal'), angle: +store.get('pk.angle', 20) };
+const pick = { type: store.get('pk.type', 'cell71'), grip: store.get('pk.grip', 'normal'), angle: +store.get('pk.angle', 20), Es: store.get('pk.Es', null) };
+// hardness slider: log surface modulus from 1 MPa (felt) to 200 GPa (steel); starts at the material's own value
+const hardToEs = (v) => Math.pow(10, 6 + v / 100 * 5.3), esToHard = (Es) => Math.round((Math.log10(Es) - 6) / 5.3 * 100);
+function showHard() {
+  const P = GUITAR_PICKS[pick.type] || GUITAR_PICKS.cell71, Es = pick.Es || P.Es || P.E;
+  $('pickHard').value = esToHard(Es);
+  $('pickHardOut').textContent = guitarShore.fromEs(Es).replace('harder than Shore D 90', 'D90+') .replace('Shore ', '') + (pick.Es ? '' : '*');
+  $('pickHard').title = guitarShore.fromEs(Es) + (pick.Es ? '' : ' (the material\'s own)');
+}
 function applyPick() {
   setEngine({ pick: Object.assign({}, pick) });
   // a pick that lets go of each string sooner also passes through a strum faster (mid-neck string, medium attack)
   const M = guitarPickModel, P = GUITAR_PICKS;
-  const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
+  const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip, pick.Es), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
   strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
 }
 function bindHandStyle() {
   fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
   strum.set({ style: $('handStyle').value });
-  $('handStyle').addEventListener('change', () => { strum.set({ style: $('handStyle').value }); store.set('o.style', $('handStyle').value); });
+  $('handStyle').addEventListener('change', () => {
+    const k = $('handStyle').value; strum.set({ style: k }); store.set('o.style', k);
+    // each style starts at its typical tempo unless a MIDI clock is setting it
+    const clocked = clockTicks.length === 25 && performance.now() - clockTicks[24] < 1000;
+    if (!clocked && HAND_STYLES[k].tempo) { $('bpm').value = HAND_STYLES[k].tempo; $('bpmOut').textContent = HAND_STYLES[k].tempo; strum.set({ bpm: HAND_STYLES[k].tempo }); store.set('s.bpm', HAND_STYLES[k].tempo); }
+  });
 }
 // MIDI clock (24 per quarter note): tempo from the spacing of the last 24 ticks; Start realigns the pattern grid
 const clockTicks = [];
@@ -325,7 +338,9 @@ function onClock(st, ts) {
 function bindPick() {
   fillSelect('pickType', Object.entries(GUITAR_PICKS).map(([k, v]) => [k, v.name]), pick.type);
   $('grip').value = pick.grip; $('pickAngle').value = pick.angle; $('pickAngleOut').textContent = pick.angle + '°';
-  $('pickType').addEventListener('change', () => { pick.type = $('pickType').value; store.set('pk.type', pick.type); applyPick(); });
+  showHard();
+  $('pickType').addEventListener('change', () => { pick.type = $('pickType').value; pick.Es = null; store.set('pk.type', pick.type); store.set('pk.Es', null); showHard(); applyPick(); });
+  $('pickHard').addEventListener('input', () => { pick.Es = hardToEs(+$('pickHard').value); store.set('pk.Es', pick.Es); showHard(); applyPick(); });
   $('grip').addEventListener('change', () => { pick.grip = $('grip').value; store.set('pk.grip', pick.grip); applyPick(); });
   $('pickAngle').addEventListener('input', () => { pick.angle = +$('pickAngle').value; $('pickAngleOut').textContent = pick.angle + '°'; store.set('pk.angle', pick.angle); applyPick(); });
 }

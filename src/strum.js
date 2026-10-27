@@ -211,6 +211,7 @@ class StrumEngine {
     this.handPos = 0; this.lastShapeTime = -1;
     this.shape = null;
     this.lookahead = 0.006;
+    this.melodyKeys = new Map();
     this.hand = root.RightHand ? new root.RightHand({ send: (e) => this.send(e), now: () => this.now(), rng: () => this.rng(), open: () => this.open(), options: () => this.o }) : null;
   }
   set(opts) { Object.assign(this.o, opts); }
@@ -229,6 +230,7 @@ class StrumEngine {
     }
   }
   noteOff(midi) {
+    if (this.melodyKeys.has(midi)) { this.hand.releaseMelody(this.melodyKeys.get(midi)); this.melodyKeys.delete(midi); return; }
     const i = this.pending.findIndex(p => p.midi === midi);
     if (i >= 0) { // released before the chord was even voiced: play it anyway, then let it go
       this.pending[i].releaseAfter = true;
@@ -246,6 +248,12 @@ class StrumEngine {
     clearTimeout(this.timer); this.timer = null;
     const notes = this.pending; this.pending = [];
     if (!notes.length) return;
+    // a single note over a running pattern is melody, taken by the plucking fingers on a string of its own
+    if (notes.length === 1 && this.o.mode === 'pattern' && this.hand && this.hand.running) {
+      const n = notes[0], t0m = Math.max(this.now() + this.lookahead, n.t + this.o.gather * 0.5);
+      const s = this.hand.playMelody(this.fold(n.midi, this.open()), n.vel, t0m);
+      if (s != null) { this.melodyKeys.set(n.midi, s); if (n.releaseAfter) setTimeout(() => this.noteOff(n.midi), 120); return; }
+    }
     const t0 = Math.max(this.now() + this.lookahead, Math.min(...notes.map(n => n.t)) + this.o.gather);
     const vel = Math.max(...notes.map(n => n.vel));
     const midis = notes.map(n => n.midi);

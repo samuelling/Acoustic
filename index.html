@@ -210,6 +210,7 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <div class="row wide"><label>Direction</label><div class="seg" data-opt="direction"><button data-v="auto">Auto</button><button data-v="down">Down</button><button data-v="up">Up</button><button data-v="alternate">Alternate</button></div></div>
       <div class="row wide"><label for="pickType">Pick</label><select id="pickType"></select></div>
       <div class="row wide"><label for="grip">Grip</label><select id="grip"><option value="tight">Tight (little tip showing)</option><option value="normal">Normal</option><option value="loose">Loose (lots of tip)</option></select></div>
+      <div class="row"><label for="pickHard">Tip hardness</label><input id="pickHard" type="range" min="0" max="100" value="60"><output id="pickHardOut">—</output></div>
       <div class="row"><label for="pickAngle">Pick angle</label><input id="pickAngle" type="range" min="0" max="45" step="1" value="20"><output id="pickAngleOut">20°</output></div>
       <div class="row"><label for="speed">Stroke time</label><input id="speed" type="range" min="15" max="110" step="1" value="55"><output id="speedOut">55 ms</output></div>
       <div class="row"><label for="humanize">Humanize</label><input id="humanize" type="range" min="0" max="100" value="60"><output id="humanizeOut">60</output></div>
@@ -288,6 +289,8 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <p><b>The player.</b> Held against the torso, the back can't ring freely: back-plate modes lose about half their Q, the air and top resonances about a quarter, and the player's body absorbs what the back radiates. On a stand, the back sings.</p>
       <p><b>Microphones.</b> The guitar radiates from several places at once: the soundhole, the bridge, the two halves of the lower bout, below the bridge, the upper bout and the back. Each body mode drives them in its own pattern (the air mode through the soundhole, dipole modes with halves in opposite phase). Each mic hears every region at its true distance and angle, through its polar pattern, with the bass boost directional mics get up close, and with regions on the far side of the body heard only by diffraction.</p>
       <p><b>Measured directivity.</b> Close up, that geometry decides the sound. From a metre or more away, what you hear is set by how the whole instrument, and the person holding it, beams sound. That pattern comes from a real guitar played by a musician in an anechoic chamber, recorded from 32 directions at 2 m (Ackermann et al., TU Berlin). The synth was measured the same way and compared. The fix-ups it needed: the player's body takes about 6 dB off everything behind them from 250 Hz up, and the back of a real guitar is brighter than a simple shadow model. Distant mics, and every reflection that leaves the guitar into the room, now follow the measured pattern; close mics keep the geometry. Try “Behind the player”.</p>
+      <p><b>The pick.</b> A pick is a little cantilever. For every pluck the synth works out where the string slips off its tip, from the pick's stiffness, its friction against the string, your attack angle and grip. That gives how far the string was pushed (loudness), which way (a flexing pick pushes it more into the top), and how fast it let go (brightness). Tip hardness is Hertz contact: a rubber or felt tip dents where it presses the string, so it touches more of it and lets go gently.</p>
+      <p><b>The plucking hand.</b> In Pattern mode the hand plays the style the way a guitarist's fingers would. The thumb keeps the bass and the fingers their home strings. Timing has a slow drift of the whole hand plus a little scatter per note, matched to hexaphonic measurements of guitarists. Plucked chords spread over 10–25 ms in each player's habitual order. The ring finger is weakest and slightly late. Rest strokes land on the next string and damp it, and a careless follow-through sometimes grazes a neighbour. Rasgueado fans four nail sweeps over about 0.3 s. Lower the skill to hear a beginner.</p>
       <p><b>The room.</b> Reflections are traced by the image-source method: each wall bounce is attenuated per octave by its material, per ray by the direction it left the guitar (the measured pattern of a guitar in a player's arms) and by the direction it reaches the mic. A late tail follows, decaying per octave at the Eyring rate for the room's volume and surfaces, at the energy level room acoustics predicts, so moving the mics away naturally trades direct sound for room sound.</p>
       <p><b>Calibration.</b> Decay per harmonic, inharmonicity, brightness over time, beating depth, and strum timing and brightness were measured from recordings of real steel-string guitars, single notes and labeled down and up strums, and the model was checked against them.</p>
       <p><b>Hand.</b> Notes that arrive together become a chord, placed on the neck with a fingering search (span, barres, open strings, voice leading). A downstroke crosses the strings in about 35–55 ms, as measured strums do; upstrokes are quicker, catch mostly the treble strings, and come out slightly brighter. Direction follows a pendulum: the hand swings every subdivision, so the gap since your last chord decides down or up.</p>
@@ -953,8 +956,28 @@ const PICKS = {
   jazz3:    { name: 'Nylon 1.38, small sharp tip', E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 1.38e-3, w: 5e-3, edge: 0.18e-3, scrape: 1.0, ell: 0.75 },
   bone300:  { name: 'Bone 3 mm, bevelled',         E: 15e9,  rho: 1900, eta: 0.010, mu: 0.25, t: 3.00e-3, w: 9e-3, edge: 0.50e-3, scrape: 0.6 },
   coin:     { name: 'Coin (milled edge)',          E: 110e9, rho: 8900, eta: 0.002, mu: 0.40, t: 1.40e-3, w: 9e-3, edge: 0.15e-3, scrape: 3.0 },
-  felt:     { name: 'Felt 3 mm',                   E: 6e7,   rho: 400,  eta: 0.300, mu: 0.60, t: 3.00e-3, w: 10e-3, edge: 1.50e-3, scrape: 0, soft: { tau: 2.2e-3, width: 0.009, dScale: 0.6 } }
+  leather:  { name: 'Leather 2 mm',                E: 2.5e8, rho: 900,  eta: 0.150, mu: 0.50, t: 2.00e-3, w: 9e-3, edge: 0.80e-3, scrape: 0.2, Es: 4e7 },
+  rubber:   { name: 'Rubber 2.5 mm (soft)',        E: 2.0e7, rho: 1150, eta: 0.200, mu: 0.80, t: 2.50e-3, w: 9e-3, edge: 0.80e-3, scrape: 0.1, Es: 3.6e6 },
+  felt:     { name: 'Felt 3 mm',                   E: 6e7,   rho: 400,  eta: 0.300, mu: 0.60, t: 3.00e-3, w: 10e-3, edge: 1.50e-3, scrape: 0, Es: 1e6 }
 };
+// Surface hardness: the tip's surface modulus Es (Pa; defaults to E for solid plastics, bone and metal). Shore A
+// (soft) via Gent's relation, Shore D (hard plastics) from tabulated conversions; above Shore D ~90 the tip is as hard
+// as the material's bulk stiffness.
+const SHORE_D = [[40, 3e7], [50, 9e7], [60, 2.5e8], [70, 6e8], [80, 1.5e9], [85, 2.4e9], [90, 3.8e9]];
+function shoreToEs(scale, h) {
+  if (scale === 'A') return 1e6 * 0.0981 * (56 + 7.62336 * h) / (0.137505 * (254 - 2.54 * h));
+  for (let i = 1; i < SHORE_D.length; i++) if (h <= SHORE_D[i][0]) {
+    const [h0, e0] = SHORE_D[i - 1], [h1, e1] = SHORE_D[i], t = Math.max(0, (h - h0) / (h1 - h0));
+    return Math.exp(Math.log(e0) + t * (Math.log(e1) - Math.log(e0)));
+  }
+  return SHORE_D[SHORE_D.length - 1][1];
+}
+function esToShore(Es) {
+  if (Es > 4e9) return 'harder than Shore D 90';
+  if (Es >= 3e7) { let lo = 40, hi = 95; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (shoreToEs('D', m) < Es) lo = m; else hi = m; } return 'Shore D ' + Math.round(lo); }
+  let lo = 0, hi = 99; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (shoreToEs('A', m) < Es) lo = m; else hi = m; }
+  return 'Shore A ' + Math.round(lo);
+}
 const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip length beyond the fingers
 
 // Quasi-static release: the string (lateral stiffness Ks = T L / (x (L - x))) pushes on the pick face; the pick bends
@@ -962,7 +985,7 @@ const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip l
 // friction angle atan(mu), the string is pushed at alpha = psi0 + phi - atan(mu) from the stroke direction and slides
 // toward the tip; it is released when it reaches the tip, which dips D0 past the string and rises along the stroke at
 // the escape angle beta. Release time = edge radius / slip speed (stroke speed + the bent pick's recoil).
-function pickModel(pk, T, L, xp, vel, angleDeg, grip) {
+function pickModel(pk, T, L, xp, vel, angleDeg, grip, EsOverride) {
   const Ks = T * L / (xp * (L - xp));
   const ell = (GRIPS[grip] || GRIPS.normal) * (pk.ell || 1);
   const I = pk.w * pk.t ** 3 / 12, Kp = 3 * pk.E * I / ell ** 3;
@@ -977,11 +1000,19 @@ function pickModel(pk, T, L, xp, vel, angleDeg, grip) {
   const fp = 0.5596 * Math.sqrt(pk.E * pk.t * pk.t / (12 * pk.rho)) / (ell * ell);
   // recoil of the bent pick is along the stroke; only its component along the face (sin of the face tilt) speeds the slip
   const v = 0.4 + 1.8 * vel, vSnap = 0.5 * delta * 2 * Math.PI * fp * Math.sin(psi0 + phi);
-  let tau = pk.edge / (v + vSnap), width = 2 * pk.edge;
-  if (pk.soft) { tau = Math.max(tau, pk.soft.tau); width = Math.max(width, pk.soft.width); d *= pk.soft.dScale || 1; }
-  const area = pk.w * ell;
-  return { d, alpha, tau, width, fp, delta, Ks, Kp,
-    click: pk.soft ? 0 : delta * fp * fp * area, decay: 1 / (Math.PI * fp * pk.eta), scrape: pk.mu * pk.scrape, hold: d / v };
+  // Hertz contact between the string (radius ~0.2 mm) and the edge, crossed cylinders ~ a sphere of radius sqrt(r R):
+  // the string presses a dent of depth dc = (9 F^2 / (16 R E*^2))^(1/3) into the tip. A soft tip (rubber, felt) takes
+  // up part of the pick's travel in the dent (less string displacement), lets go over the time it takes the dent to
+  // unload (longer, gentler release) and touches a wider stretch of string (fewer high harmonics). Hard tips: microns.
+  const Es = EsOverride || pk.Es || pk.E, Estar = Es / (1 - 0.45 * 0.45);
+  const R = Math.sqrt(2e-4 * pk.edge), F = Ks * d;
+  const dc = Math.min(0.6 * pk.t, Math.cbrt(9 * F * F / (16 * R * Estar * Estar)));
+  const aC = Math.sqrt(R * dc);
+  d = Math.max(0.25 * d, d - dc);
+  const tau = (pk.edge + dc) / (v + vSnap), width = 2 * pk.edge + 2 * aC + 2 * dc;
+  const area = pk.w * ell, hard = Math.min(1, Math.sqrt(Es / 1e9));
+  return { d, alpha, tau, width, fp, delta, Ks, Kp, dc, Es,
+    click: Es < 5e8 ? 0 : delta * fp * fp * area, decay: 1 / (Math.PI * fp * pk.eta), scrape: pk.mu * pk.scrape * hard, hard, hold: d / v };
 }
 const PICK_REF = { type: 'cell71', angle: 20, grip: 'normal' };
 
@@ -1495,7 +1526,8 @@ class GuitarEngine {
       this.loadModes(v, ev.s, midi);
     } else {
       // pick lands on a ringing string: it stops part of the motion
-      const kc = ev.style === 'pick' ? 0.62 - 0.32 * vel : 0.5 - 0.3 * vel;
+      // (a brief nail sweep, as in rasgueado, only skims it: ~90% of the motion survives; Laurson et al. 2010)
+      const kc = ev.keep ?? (ev.style === 'pick' ? 0.62 - 0.32 * vel : 0.5 - 0.3 * vel);
       for (let c = 0; c < v.n; c++) { v.y1[c] *= kc; v.y2[c] *= kc; }
     }
     s.midi = midi; s.fret = Math.round(midi - s.open);
@@ -1521,17 +1553,17 @@ class GuitarEngine {
       // the chosen pick relative to the calibrated reference (medium celluloid, normal grip, 20 degrees)
       const pc = Object.assign({}, PICK_REF, this.params.pick || {}, ev.pick || {});
       const pk = PICKS[pc.type] || PICKS.cell71, T = v.T;
-      pm = pickModel(pk, T, L, xp, vel, pc.angle, pc.grip);
+      pm = pickModel(pk, T, L, xp, vel, pc.angle, pc.grip, pc.Es || null);
       const p0 = pickModel(PICKS.cell71, T, L, xp, vel, PICK_REF.angle, PICK_REF.grip);
       pm.rel = { d: pm.d / p0.d, tau: pm.tau / p0.tau, width: pm.width / p0.width, alpha: pm.alpha - p0.alpha,
-        click: pm.click / p0.click, scrape: pm.scrape / p0.scrape };
+        click: pm.click / p0.click, scrape: pm.scrape / p0.scrape, hard: pm.hard / p0.hard };
       tau *= Math.min(12, Math.max(0.1, pm.rel.tau));
       width *= pm.rel.width;
       theta = Math.min(1.25, Math.max(0.04, theta + pm.rel.alpha));
     }
     else if (style === 'thumb') { tau = 1.1e-3 * (1.4 - 0.6 * vel); width = 0.012; theta = 0.5 + 0.2 * this.rng(); }
     else { tau = 6e-4 * (1.4 - 0.6 * vel); width = 0.008; theta = 0.65 + 0.25 * this.rng(); }
-    if (style !== 'pick' && (ev.nail ?? this.params.preset === 'classical')) tau *= 0.5; // nails
+    if (style !== 'pick' && (ev.nail ?? this.params.preset === 'classical')) { tau *= 0.5; width = Math.min(width, 0.0025); } // nail: 1-3 mm contact
     // rest stroke (apoyando): the finger pushes the string toward the top and stops on the next string, so more of
     // the motion is perpendicular to the top (louder, shorter, rounder); a free stroke pulls it more along the top
     if (ev.rest && style !== 'pick') theta = Math.min(1.35, theta + 0.4);
@@ -1563,7 +1595,7 @@ class GuitarEngine {
     const Fs = v.T * h / xp * dir;
     this.staticZ -= Fs * st; this.staticY -= Fs * ct;
     // release click: pick or nail leaving the string, straight into the body
-    const nAmt = this.params.noise * vel * (style === 'pick' ? 0.45 * Math.min(4, pm ? Math.sqrt(pm.rel.scrape) : 1) : 0.15) * (ev.dead ? 2 : 1);
+    const nAmt = this.params.noise * vel * (style === 'pick' ? 0.45 * Math.min(4, pm ? Math.sqrt(pm.rel.scrape) * pm.rel.hard : 1) : 0.15) * (ev.dead ? 2 : 1);
     if (nAmt > 0) {
       const start = this.clock & this.RMASK, nl = Math.round(0.004 * sr);
       const wound = this.P.strings[ev.s].wound;
@@ -1634,7 +1666,7 @@ class GuitarEngine {
   tap(ev) {
     const sr = this.sr, vel = Math.max(0.05, Math.min(1, ev.vel ?? 0.7));
     const dur = (ev.nail ? 0.0015 : 0.004) * (1.2 - 0.4 * vel), n = Math.max(4, Math.round(dur * sr));
-    const F = (ev.amt ?? 1) * 2.5 * vel, at = this.clock & this.RMASK;
+    const F = (ev.amt ?? 1) * 1.2 * vel, at = this.clock & this.RMASK;
     for (let k = 0; k < n; k++) this.bodyIn[(at + k) & this.RMASK] += F * Math.sin(Math.PI * (k + 0.5) / n);
     if (ev.nail) { let p = 0; for (let k = 0; k < 120; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * 0.08 * vel * Math.exp(-k / 25); p = r; } }
   }
@@ -1938,6 +1970,7 @@ root.GUITAR_HOLDS = HOLDS;
 root.GUITAR_PICKS = PICKS;
 root.GUITAR_GRIPS = GRIPS;
 root.guitarPickModel = pickModel;
+root.guitarShore = { toEs: shoreToEs, fromEs: esToShore };
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {
   class GuitarProcessor extends AudioWorkletProcessor {
@@ -1961,8 +1994,9 @@ if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 
 </script>
 <script>// Acoustic — the plucking hand. Turns a held chord into what a guitarist's right hand does with it, style by style:
 // which finger takes which string, when each finger actually lands, how hard, rest or free stroke, and the small
-// contacts a real hand makes (a rest stroke landing on the next string, a follow-through grazing a neighbour,
-// fingers planted before an arpeggio, the palm on the bass strings, the ring finger tapping the top).
+// contacts a real hand makes (a rest stroke landing on the next string, a follow-through grazing a neighbour, the
+// ring finger dragged along by the middle, the thumb resting on the bass, fingers planted before an arpeggio, the
+// ring finger tapping the top). Melody notes played over a running pattern are taken by alternating fingers.
 //
 // Patterns are written in a small notation, one entry per grid step ('-' = nothing), several actions per step:
 //   p:B   thumb on the bass string            i:T1 m:T2 a:T3   fingers on the three highest chord strings
@@ -1970,114 +2004,146 @@ if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 
 //   D:all / U:top3 / D:B ...   flatpick stroke down/up across a string set or on a single role
 //   R:eami   rasgueado: each finger in turn flicks its nail down across the strings (R:ami, R:i, Ru:i = index up)
 //   N:T3     a nail stroke down on one string (clawhammer)       K:top3  brush down with the backs of the nails
+//   Pd:/Pu:  thumb down / thumbnail up through a string set (alzapúa)
 //   G        golpe (tap on the top)                              X:all   tapado: strings muted by the palm, struck
 // Modifiers after a token:  > accent   . ghost (soft)   ! rest stroke   _ palm-muted
 //
-// Timing follows the two-level model of rhythmic motor control (Wing & Kristofferson 1973): a central timekeeper
-// whose intervals vary, with first-order phase correction toward the beat (Vorberg & Wing 1996; Repp 2005), plus
-// a motor delay per finger. Finger-specific means and spreads are in MOTOR (see the README for sources).
+// Numbers (see README, "The plucking hand"):
+//   timing   two levels: a slow drift of the whole hand against the beat (AR(1), rho 0.9; Heijink & Meulenbroek 2002
+//            found most of professionals' 18-24 ms onset SD was whole-pattern shifts) plus note-to-note jitter
+//            SD = sqrt(4^2 + (k IOI)^2) ms, k ~0.06 for students (Nezio Malta 2012: arpeggio IOI SD 17 ms at 184 ms)
+//            down to ~0.03 for professionals; the ring finger slightly late; tremolo's gap before the thumb.
+//   chords   plucked together: first-to-last spread ~10 ms (tight) to ~28 ms (loose) in a fixed order per player
+//            (Nezio Malta 2012); louder notes a few ms earlier (Goebl 2001).
+//   dynamics per-pluck SD ~1.5-2 dB (professional) to 3-4 dB (amateur); m loudest, a weakest, thumb softer in
+//            accompaniment; accents +3-4 dB; rest stroke +2.5 dB and more perpendicular to the top.
+//   limits   same finger again no sooner than 140-180 ms, thumb 110 ms; finger independence falls with rate and is
+//            lowest for the ring finger (Hager-Ross & Schieber 2000; Zatsiorsky et al. 2000).
+//   errors   brushes 0.3% (professional) to 3% (amateur) per pluck, -20 to -30 dB; slips late and soft (Maidhof
+//            et al. 2009). These rates are estimates: no guitar study has measured them.
+//   rasgueado four overlapping nail sweeps across ~290 ms (Laurson, Valimaki & Penttinen 2010).
 
 (function (root) {
 'use strict';
 
-function gauss(r) { return (r() + r() + r() + r() - 2) * 1.2247; }
+function gauss(r) { return (r() + r() + r() + r() - 2) * 1.7321; }   // ~N(0,1)
 function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+const dB = (x) => Math.pow(10, x / 26);   // pluck velocity -> level: string displacement ~ vel^1.3
 
 // ---------------- motor parameters ----------------
-// strength: velocity multiplier; bias: mean timing offset (s) relative to the hand's clock; sd: motor delay
-// spread (s) at mid skill. Thumb: strongest, slightly early in pinches; ring finger: weakest and least independent.
+// db: level offset of the finger in arpeggios; bias: mean lag (s); minGap: shortest repeat of the same finger (s,
+// for a professional; amateurs ~30% longer); indep: individuation index (Hager-Ross & Schieber 2000).
 const MOTOR = {
   fingers: {
-    p: { strength: 1.00, bias: -0.002, sd: 0.0045, style: 'thumb' },
-    i: { strength: 0.86, bias: 0.000, sd: 0.0040, style: 'finger' },
-    m: { strength: 0.88, bias: 0.001, sd: 0.0040, style: 'finger' },
-    a: { strength: 0.76, bias: 0.003, sd: 0.0055, style: 'finger' },
-    c: { strength: 0.60, bias: 0.004, sd: 0.0070, style: 'finger' },
-    e: { strength: 0.70, bias: 0.000, sd: 0.0050, style: 'finger' }  // little finger in rasgueado
+    p: { db: -2.0, bias: -0.001, minGap: 0.110, indep: 0.983, style: 'thumb' },
+    i: { db: 0.0, bias: 0.000, minGap: 0.140, indep: 0.982, style: 'finger' },
+    m: { db: 0.5, bias: 0.000, minGap: 0.140, indep: 0.937, style: 'finger' },
+    a: { db: -1.5, bias: 0.004, minGap: 0.150, indep: 0.907, style: 'finger' },
+    c: { db: -3.0, bias: 0.005, minGap: 0.170, indep: 0.943, style: 'finger' },
+    e: { db: -2.0, bias: 0.000, minGap: 0.170, indep: 0.943, style: 'finger' }   // little finger, rasgueado
   },
-  timekeeper: 0.012,      // SD of the internal clock as a fraction of the step interval (mid skill)
-  phaseCorr: 0.35,        // fraction of each asynchrony corrected on the next step
-  velSd: 0.09,            // per-pluck dynamic variability (fraction), mid skill
-  pinchSpread: 0.006,     // SD of finger onsets within a simultaneous pinch (s)
-  brush: 0.05,            // probability that a free-stroke follow-through grazes the neighbouring string (mid skill)
-  maxRate: { p: 9, i: 10, m: 10, a: 8, c: 6, e: 7 }   // fastest comfortable repetitions per second for one finger
+  jitterFloor: 0.004,      // s
+  jitterK: [0.075, 0.03],  // fraction of the inter-onset interval, beginner -> professional (an IOI SD is sqrt(2) x the onset SD:
+                           // students' 17 ms IOI SD at 184 ms (Nezio Malta 2012) ~ k 0.06 at skill ~0.35)
+  driftRho: 0.9,
+  driftSd: [0.06, 0.03],   // stationary SD of the hand's drift, fraction of the step
+  velSdDb: [3.5, 1.7],
+  chordSpread: [[28, 8], [10, 5]],  // ms first-to-last (mean, SD): loose, tight
+  brush: [0.03, 0.003],    // per free-stroke pluck, before rate and style scaling
+  drag: [0.015, 0.002],    // ring finger pulled along by the middle finger
+  slip: [0.03, 0.005]      // a pluck that goes wrong: missed, wrong string, or late and soft
 };
+const lerp = (pair, skill) => pair[0] + (pair[1] - pair[0]) * skill;
 
 // ---------------- styles ----------------
-// sub: grid steps per beat; beats: pattern length in beats; swing: long/short ratio of off-beat pairs (1 = straight);
-// push: playing ahead (-) or behind (+) the beat, s; nail: plucks with nails; rest: default to rest strokes;
-// plant: plant fingers before arpeggios; brush: scales the accidental-contact rate; pick: flatpick style.
+// sub: grid steps per beat; beats: pattern length; tempo: typical bpm; swing: long/short ratio of off-beat pairs at
+// slow tempo, shrinking toward 1 as tempo rises (Friberg & Sundstrom 2002; Honing & de Haas 2008); push: playing
+// ahead (-) or behind (+), s; offEarly: off-beats early by this fraction of a beat (Brazilian microtiming, Gouyon
+// 2007); nail: plucks with nails; thumbDb: thumb level in this style; thumbRest: chance the thumb settles on the next
+// string after a bass note; plant: sequential planting; preP: tremolo's extra gap before the thumb.
 const STYLES = {
-  classical: { name: 'Classical arpeggio (p-i-m-a-m-i)', sub: 3, beats: 2, nail: true, plant: false, brush: 0.6,
+  classical: { name: 'Classical arpeggio (p-i-m-a-m-i)', tempo: 66, sub: 3, beats: 2, nail: true, brush: 0.7,
     steps: ['p:B', 'i:T1', 'm:T2', 'a:T3', 'm:T2', 'i:T1'] },
-  giuliani: { name: 'Classical: Giuliani p-i-m-i, bass rest stroke', sub: 4, beats: 2, nail: true, brush: 0.6,
+  giuliani: { name: 'Classical: Giuliani p-i-m-i, bass rest stroke', tempo: 72, sub: 4, beats: 2, nail: true, thumbDb: 3, brush: 0.7,
     steps: ['p:B!>', 'i:T1', 'm:T2', 'i:T1', 'p:A!', 'i:T1', 'm:T2', 'i:T1'] },
-  tremolo: { name: 'Classical tremolo (p-a-m-i)', sub: 4, beats: 2, nail: true, brush: 0.5,
+  planted: { name: 'Classical: planted arpeggio (p-i-m-a)', tempo: 60, sub: 4, beats: 1, nail: true, plant: true, brush: 0.5,
+    steps: ['p:B', 'i:T1', 'm:T2', 'a:T3'] },
+  tremolo: { name: 'Classical tremolo (p-a-m-i)', tempo: 140, sub: 4, beats: 2, nail: true, preP: true, brush: 0.6,
     steps: ['p:B', 'a:T3', 'm:T3', 'i:T3', 'p:A', 'a:T3', 'm:T3', 'i:T3'] },
-  travis: { name: 'Travis picking (alternating thumb)', sub: 2, beats: 4, swing: 1.15, brush: 1.0,
+  travis: { name: 'Travis picking (alternating thumb)', tempo: 110, sub: 2, beats: 4, swing: 1.2, thumbDb: 0, thumbRest: 0.45, brush: 1.0,
     steps: ['p:B_> m:T3', 'i:T2', 'p:A_', 'm:T3', 'p:B_', 'i:T2', 'p:A_', 'm:T3.'] },
-  folk: { name: 'Folk fingerpicking (p-i-m-i)', sub: 2, beats: 4, brush: 1.2,
+  folk: { name: 'Folk fingerpicking (p-i-m-i)', tempo: 92, sub: 2, beats: 4, thumbDb: -1, thumbRest: 0.3, brush: 1.2,
     steps: ['p:B>', 'i:T1', 'm:T2', 'i:T1', 'p:A', 'i:T1', 'm:T2', 'i:T1'] },
-  ballad: { name: 'Ballad pinch (p+a, then i-m)', sub: 2, beats: 4, brush: 1.0,
+  ballad: { name: 'Ballad pinch (p+a, then i-m)', tempo: 76, sub: 2, beats: 4, brush: 1.0,
     steps: ['p:B> a:T3', 'i:T1', 'm:T2', 'i:T1', 'p:A m:T2', 'i:T1', 'a:T3', 'i:T1'] },
-  bossa: { name: 'Bossa nova (thumb + block chords)', sub: 2, beats: 8, brush: 0.7,
+  bossa: { name: 'Bossa nova (thumb + block chords)', tempo: 136, sub: 2, beats: 8, thumbDb: 2, offEarly: 0.025, brush: 0.7,
     steps: ['p:B i:T1 m:T2 a:T3', '-', '-', 'i:T1 m:T2 a:T3', 'p:A', '-', 'i:T1. m:T2. a:T3.', '-',
             'p:B', '-', 'i:T1 m:T2 a:T3', '-', 'p:A i:T1 m:T2 a:T3', '-', '-', '-'] },
-  boomchuck: { name: 'Bluegrass boom-chuck (flatpick)', sub: 2, beats: 4, pick: true, swing: 1.1, push: -0.006, brush: 0,
+  boomchuck: { name: 'Bluegrass boom-chuck (flatpick)', tempo: 120, sub: 2, beats: 4, pick: true, swing: 1.25, push: -0.006, brush: 0,
     steps: ['D:B>', '-', 'D:top4', 'U:top3.', 'D:A>', '-', 'D:top4', 'U:top3.'] },
-  crosspick: { name: 'Bluegrass crosspicking roll (3+3+2)', sub: 2, beats: 4, pick: true, push: -0.004, brush: 0,
+  crosspick: { name: 'Bluegrass crosspicking roll (D-D-U, 3+3+2)', tempo: 120, sub: 2, beats: 4, pick: true, swing: 1.15, push: -0.004, brush: 0,
     steps: ['D:T1>', 'D:T2', 'U:T3', 'D:T1>', 'D:T2', 'U:T3', 'D:T1>', 'U:T3'] },
-  clawhammer: { name: 'Clawhammer / frailing (bum-ditty)', sub: 2, beats: 2, brush: 0.8,
+  clawhammer: { name: 'Clawhammer / frailing (bum-ditty)', tempo: 100, sub: 2, beats: 2, brush: 0.8,
     steps: ['N:T3>', '-', 'K:top3', 'p:A'] },
-  rumba: { name: 'Flamenco rumba (rasgueo + tapado)', sub: 2, beats: 4, nail: true, push: -0.004, brush: 0,
+  rumba: { name: 'Flamenco rumba (rasgueo + tapado)', tempo: 110, sub: 2, beats: 4, nail: true, push: -0.004, brush: 0,
     steps: ['R:i>', '-', 'X:all G', 'Ru:i.', '-', 'Ru:i', 'X:all G', 'Ru:i.'] },
-  solea: { name: 'Flamenco soleá compás (12 beats)', sub: 1, beats: 12, nail: true, brush: 0,
+  solea: { name: 'Flamenco soleá compás (12 beats)', tempo: 150, sub: 1, beats: 12, nail: true, brush: 0,
     steps: ['p:B', 'R:i', 'R:eami> G', 'p:B', 'R:i', 'R:eami> G', 'R:i', 'R:eami> G', 'p:B', 'R:eami> G', 'Ru:i', 'R:ami> G'] },
-  alzapua: { name: 'Flamenco alzapúa (thumb down-up-down)', sub: 3, beats: 2, nail: true, brush: 0,
+  alzapua: { name: 'Flamenco alzapúa (thumb down-up-down)', tempo: 120, sub: 3, beats: 2, nail: true, brush: 0,
     steps: ['p:B!>', 'Pd:top3', 'Pu:top3', 'p:B!>', 'Pd:top3', 'Pu:top3'] }
 };
 
 // ---------------- the hand ----------------
 class RightHand {
-  // host: { send(events), now(), rng(), open(), options() }  (options: bpm, skill, brushes, palm, pickPos, humanize)
+  // host: { send(events), now(), rng(), open(), options() }  (options: style, bpm, skill, brushes, palm, pickPos, humanize)
   constructor(host) {
     this.h = host;
     this.running = false; this.v = null; this.vel = 0.7;
-    this.step = 0; this.tGrid = 0; this.tHand = 0; this.timer = null;
-    this.lastFinger = {}; this.lastTimeFinger = {};
-    this.ringing = [0, 0, 0, 0, 0, 0];   // time each string was last plucked by the hand
+    this.step = 0; this.tGrid = 0; this.timer = null; this.drift = 0;
+    this.lastT = {};                      // finger -> last pluck time
+    this.ringing = [-9, -9, -9, -9, -9, -9];
+    this.melody = new Map();              // string -> melody note holding it
+    this.lastMel = null;                  // { s, finger }
+    // this player's habitual order of fingers in a plucked chord (stable across the performance)
+    const r = host.rng, order = ['p', 'i', 'm', 'a'];
+    for (let k = order.length - 1; k > 0; k--) { const j = Math.floor(r() * (k + 1)); [order[k], order[j]] = [order[j], order[k]]; }
+    this.chordOrder = order;
   }
   style() { return STYLES[this.h.options().style] || STYLES.travis; }
-  stepDur() { const o = this.h.options(), S = this.style(); return 60 / Math.max(30, o.bpm || 96) / S.sub; }
+  stepDur() { const o = this.h.options(), S = this.style(); return 60 / Math.max(30, o.bpm || S.tempo || 96) / S.sub; }
+  skill() { return clamp(this.h.options().skill ?? 0.6, 0, 1); }
+  hum() { return (this.h.options().humanize ?? 0.6) / 0.6; }
 
-  // a new chord: start the pattern at this time, or keep the running grid and swap the voicing
+  // a new chord: start the pattern now, or keep the running grid and swap the voicing
   chord(v, vel, t) {
     const prev = this.v;
     this.v = v; this.vel = vel; this.roles = this.mapRoles(v);
     if (!this.running) {
-      this.running = true; this.step = 0; this.tGrid = t; this.tHand = t; this.async = 0;
+      this.running = true; this.step = 0; this.tGrid = t; this.drift = 0;
       this.tick();
       return;
     }
-    // a chord grabbed just after a step already went out with the old one: play that step again, late, as a player
-    // who was late with the left hand would
+    // grabbed just after a step went out with the old chord: play that step again, late, like a late left hand
     const sd = this.stepDur(), last = this.tGrid - sd;
     if (prev && t - last < Math.min(0.09, 0.45 * sd) && t >= last - 0.01) this.emitStep((this.step - 1 + this.len()) % this.len(), Math.max(t, last), true);
   }
-  realign(t) { if (!this.running) return; this.step = 0; this.tGrid = t; this.async = 0; }
-  stop() { this.running = false; clearTimeout(this.timer); this.timer = null; }
+  realign(t) { if (!this.running) return; this.step = 0; this.tGrid = t; this.drift = 0; }
+  stop() { this.running = false; clearTimeout(this.timer); this.timer = null; this.melody.clear(); }
   len() { return this.style().steps.length; }
 
+  swingRatio() {
+    const S = this.style(), bpm = this.h.options().bpm || S.tempo || 96;
+    if (!S.swing || S.sub % 2) return 1;
+    return 1 + (S.swing - 1) * clamp((220 - bpm) / (220 - 100), 0, 1);
+  }
   tick() {
     if (!this.running) return;
     const now = this.h.now(), ahead = 0.035;
     while (this.tGrid < now + ahead) {
       this.emitStep(this.step, this.tGrid, false);
       this.step = (this.step + 1) % this.len();
-      // swing: lengthen on-beat steps of each pair, shorten off-beats
-      const S = this.style(), sd = this.stepDur(), sw = S.swing || 1;
-      const pairPos = S.sub % 2 === 0 ? (this.step % 2) : -1;
-      const k = pairPos === 1 ? 2 * sw / (1 + sw) : pairPos === 0 ? 2 / (1 + sw) : 1;
+      const S = this.style(), sd = this.stepDur(), sw = this.swingRatio();
+      const k = S.sub % 2 === 0 ? (this.step % 2 === 1 ? 2 * sw / (1 + sw) : 2 / (1 + sw)) : 1;
       this.tGrid += sd * k;
     }
     this.timer = setTimeout(() => this.tick(), 12);
@@ -2090,14 +2156,13 @@ class RightHand {
     const pitch = (s) => open[s] + v.frets[s];
     const B = snd[0];
     const rootPc = pitch(B) % 12;
-    // alternate bass: a bass-side string (not B) carrying the 5th, else the next sounding string up
     let A = snd.find(s => s !== B && s <= 3 && (pitch(s) - rootPc + 120) % 12 === 7);
     if (A == null) A = snd.find(s => s > B && s <= 3) ?? snd[1] ?? B;
     const treb = snd.filter(s => s >= 2 && s !== B && s !== A);
     const top = treb.length >= 3 ? treb.slice(-3) : snd.slice(-3);
     const T3 = top[top.length - 1], T2 = top[top.length - 2] ?? T3, T1 = top[top.length - 3] ?? T2;
     const M = snd.find(s => s > B) ?? B;
-    return { B, A, M, T1, T2, T3, snd, pitch };
+    return { B, A, M, T1, T2, T3, snd };
   }
   stringSet(name) {
     const r = this.roles, snd = r.snd;
@@ -2106,149 +2171,240 @@ class RightHand {
     if (m) { const n = +m[1], hi = snd[snd.length - 1], out = []; for (let s = Math.max(snd[0], hi - n + 1); s <= hi; s++) out.push(s); return out; }
     return [r[name]].filter(s => s != null);
   }
+  midiOf(s) { const open = this.h.open(); return this.melody.has(s) ? this.melody.get(s) : (this.v.frets[s] >= 0 ? open[s] + this.v.frets[s] : open[s]); }
 
   // ---- one grid step ----
   emitStep(k, tGrid, late) {
     const S = this.style(), o = this.h.options(), rng = this.h.rng;
     const src = S.steps[k];
     if (!src || src === '-' || !this.v) return;
-    const skill = clamp(o.skill ?? 0.6, 0, 1), loose = 1.6 - 1.2 * skill;   // beginner ~1.6x, virtuoso ~0.4x spread
-    // the hand's clock: timekeeper noise with phase correction toward the grid
-    const sd = this.stepDur();
-    if (!late) {
-      // asynchrony of the hand's clock against the beat: a fraction is corrected each step, the timekeeper adds new error
-      this.async = (this.async || 0) * (1 - MOTOR.phaseCorr) + gauss(rng) * MOTOR.timekeeper * sd * loose * (o.humanize ?? 0.6) / 0.6;
-      this.tHand = tGrid + this.async;
+    const skill = this.skill(), sd = this.stepDur(), hum = this.hum();
+    if (!late) { // slow drift of the whole hand against the beat
+      const sdD = lerp(MOTOR.driftSd, skill) * sd * hum;
+      this.drift = this.drift * MOTOR.driftRho + gauss(rng) * sdD * Math.sqrt(1 - MOTOR.driftRho * MOTOR.driftRho);
     }
-    const tBase = (late ? tGrid : this.tHand) + (S.push || 0);
-    const beatPos = k / S.sub, onBeat = k % S.sub === 0;
-    // metric accent: downbeat of the pattern strongest, then beats, then subdivisions
+    const onBeat = k % S.sub === 0;
+    let t = tGrid + this.drift + (S.push || 0);
+    if (!onBeat && S.offEarly) t -= S.offEarly * sd * S.sub;
     const metric = k === 0 ? 1.0 : onBeat ? 0.93 : 0.84;
-    const evs = [];
     const toks = src.trim().split(/\s+/);
-    const pinch = toks.filter(t => /^[pimac]:/.test(t)).length > 1;
-    for (const tok of toks) this.action(tok, tBase, metric, pinch, skill, loose, evs, S, o);
+    const pluckToks = toks.filter(x => /^[pimac]:/.test(x));
+    const evs = [];
+    // a plucked chord: fingers land in this player's habitual order over the chord spread
+    let chordOff = null;
+    if (pluckToks.length > 1) {
+      const [mu, sdS] = MOTOR.chordSpread.map(x => x).reduce((a, b) => [a[0] + (b[0] - a[0]) * skill, a[1] + (b[1] - a[1]) * skill]);
+      const spread = Math.max(0, mu + gauss(rng) * sdS) / 1000 * hum;
+      const fingers = pluckToks.map(x => x[0]);
+      const ranked = this.chordOrder.filter(f => fingers.includes(f));
+      chordOff = {}; ranked.forEach((f, j) => { chordOff[f] = ranked.length > 1 ? spread * j / (ranked.length - 1) - spread / 2 : 0; });
+    }
+    for (const tok of toks) this.action(tok, t, metric, chordOff, sd, evs, S, o);
     this.h.send(evs);
   }
 
-  action(tok, t0, metric, pinch, skill, loose, evs, S, o) {
-    const rng = this.h.rng, open = this.h.open(), v = this.v, hum = (o.humanize ?? 0.6) / 0.6;
+  // per-pluck timing and level noise, scaled by skill and the humanize control
+  jitter(ioi) {
+    const k = lerp(MOTOR.jitterK, this.skill());
+    return gauss(this.h.rng) * Math.sqrt(MOTOR.jitterFloor ** 2 + (k * ioi) ** 2) * this.hum();
+  }
+  velNoise() { return dB(gauss(this.h.rng) * lerp(MOTOR.velSdDb, this.skill()) * this.hum()); }
+  rateFactor(finger, t) {  // independence falls as fingers move faster than ~3 Hz (Hager-Ross & Schieber 2000)
+    const last = this.lastT[finger]; if (last == null) return 1;
+    const hz = 1 / Math.max(0.03, t - last);
+    return 1 + Math.max(0, hz - 3) / 3;
+  }
+
+  action(tok, t0, metric, chordOff, sd, evs, S, o) {
+    const rng = this.h.rng, v = this.v, skill = this.skill(), hum = this.hum();
     const mods = /[>.!_]+$/.exec(tok); const md = mods ? mods[0] : '';
     const core = mods ? tok.slice(0, -md.length) : tok;
-    const acc = md.includes('>') ? 1.18 : md.includes('.') ? 0.62 : 1;
-    const rest = md.includes('!') || (S.rest && !md.includes('.'));
+    const accent = md.includes('>'), ghost = md.includes('.');
+    const acc = accent ? dB(3.5) : ghost ? dB(-6) : 1;
+    const rest = md.includes('!') || (S.rest && !ghost);
     const palm = md.includes('_') || o.palm;
     const vel0 = this.vel * metric * acc;
-    const vsd = MOTOR.velSd * loose * hum;
     const [kind, arg] = core.split(':');
-    const midiOf = (s) => v.frets[s] >= 0 ? open[s] + v.frets[s] : open[s];
+    const tA = t0 - (accent ? 0.003 : 0);   // accented notes come a little early
 
-    if (kind === 'G') { evs.push({ type: 'tap', t: t0 + 0.002 + Math.abs(gauss(rng)) * 0.003 * loose, vel: clamp(vel0 * 0.9, 0.05, 1), nail: true }); return; }
+    if (kind === 'G') { evs.push({ type: 'tap', t: tA + 0.002 + Math.abs(this.jitter(0.02)), vel: clamp(vel0 * 0.9, 0.05, 1), nail: true }); return; }
 
     // flatpick strokes
     if (kind === 'D' || kind === 'U') {
-      const dir = kind === 'D' ? 1 : -1;
-      const set = this.stringSet(arg);
+      const dir = kind === 'D' ? 1 : -1, set = this.stringSet(arg);
       if (set.length === 1) {
-        const s = set[0];
-        evs.push({ type: 'pluck', s, midi: midiOf(s), t: t0 + gauss(rng) * 0.0035 * loose * hum, dir, style: 'pick',
-          vel: clamp(vel0 * (dir < 0 ? 0.9 : 1) * (1 + gauss(rng) * vsd), 0.03, 1), palm, dead: v.frets[s] < 0,
+        const s = set[0]; if (this.melody.has(s)) return;
+        if (this.slip(evs, s, tA, dir, 'pick', vel0)) return;
+        evs.push({ type: 'pluck', s, midi: this.midiOf(s), t: tA + this.jitter(sd), dir, style: 'pick',
+          vel: clamp(vel0 * (dir < 0 ? 0.9 : 1) * this.velNoise(), 0.03, 1), palm, dead: v.frets[s] < 0,
           pickPos: (o.pickPos || 0.2) * (1 + gauss(rng) * 0.04 * hum), bright: dir < 0 ? 1.4 : 1 });
-        this.ringing[s] = t0;
-        // a single-string pick stroke sometimes clips the next string in its path (less for skilled players)
-        if (rng() < 0.03 * (o.brushes ?? 1) * loose) this.graze(evs, s + dir, t0 + 0.006, 'pick', vel0, dir);
+        this.ringing[s] = tA;
+        // a single-string pick stroke sometimes clips the next string in its path
+        if (rng() < lerp(MOTOR.brush, skill) * (o.brushes ?? 1) * 1.5) this.graze(evs, s + dir, tA + 0.006, 'pick', vel0, dir);
         return;
       }
-      this.sweep(evs, dir > 0 ? set : set.slice().reverse(), t0, vel0 * (dir < 0 ? 0.88 : 1), dir, 'pick', false, palm, o, loose);
+      this.sweep(evs, dir > 0 ? set : set.slice().reverse(), tA + this.jitter(sd) * 0.6, vel0 * (dir < 0 ? 0.88 : 1), dir, 'pick', false, palm, o);
       return;
     }
-    if (kind === 'X') { // tapado: palm lands on the strings as the hand strikes: dead, percussive
-      this.sweep(evs, this.stringSet(arg), t0, vel0 * 0.8, 1, S.pick ? 'pick' : 'finger', S.nail, palm, o, loose, true);
-      return;
-    }
-    if (kind === 'K') { this.sweep(evs, this.stringSet(arg), t0, vel0 * 0.8, 1, 'finger', true, palm, o, loose); return; }
-    if (kind === 'N') { // clawhammer: the nail strikes down through one string
-      for (const s of this.stringSet(arg)) evs.push({ type: 'pluck', s, midi: midiOf(s), t: t0 + gauss(rng) * 0.004 * loose * hum, dir: 1,
-        style: 'finger', nail: true, rest: true, vel: clamp(vel0 * 1.05 * (1 + gauss(rng) * vsd), 0.03, 1), palm, pickPos: 0.22 });
+    if (kind === 'X') { this.sweep(evs, this.stringSet(arg), tA, vel0 * 0.8, 1, S.pick ? 'pick' : 'finger', S.nail, palm, o, true); return; }
+    if (kind === 'K') { this.sweep(evs, this.stringSet(arg), tA + this.jitter(sd), vel0 * 0.8, 1, 'finger', true, palm, o); return; }
+    if (kind === 'N') { // clawhammer: the nail strikes down through one string and comes to rest on the next
+      for (const s of this.stringSet(arg)) {
+        if (this.melody.has(s)) continue;
+        const t = tA + this.jitter(sd);
+        evs.push({ type: 'pluck', s, midi: this.midiOf(s), t, dir: 1, style: 'finger', nail: true, rest: true,
+          vel: clamp(vel0 * dB(1) * this.velNoise(), 0.03, 1), palm, pickPos: 0.22 });
+        this.ringing[s] = t;
+      }
       return;
     }
     if (kind === 'Pd' || kind === 'Pu') { // alzapúa: thumb through the strings down, thumbnail back up
       const dir = kind === 'Pd' ? 1 : -1, set = this.stringSet(arg);
-      this.sweep(evs, dir > 0 ? set : set.slice().reverse(), t0, vel0 * (dir > 0 ? 0.9 : 0.75), dir, 'thumb', true, palm, o, loose);
+      this.sweep(evs, dir > 0 ? set : set.slice().reverse(), tA + this.jitter(sd) * 0.6, vel0 * (dir > 0 ? 0.9 : 0.75), dir, 'thumb', true, palm, o, false, 0.02);
       return;
     }
     if (kind === 'R' || kind === 'Ru') {
-      // rasgueado: fingers flick out in sequence (little/ring/middle/index), each nail sweeping the strings
+      // rasgueado: fingers flick out one after another, each nail sweeping the strings; successive sweeps overlap
+      // (Laurson et al. 2010: four sweeps across ~290 ms). Gap scales with the beat, tighter for a stronger player.
       const fingers = kind === 'Ru' ? ['i'] : arg.split('');
       const set = this.stringSet('all');
-      const gap = clamp(0.028 * (1.25 - 0.5 * skill), 0.014, 0.04);     // between successive fingers
+      const beat = sd * S.sub;
+      const gap = clamp(0.22 * beat, 0.055, 0.1) * (1.15 - 0.3 * skill);
       fingers.forEach((f, j) => {
         const F = MOTOR.fingers[f] || MOTOR.fingers.i;
-        const tf = t0 + j * gap * (1 + gauss(rng) * 0.12 * loose) + F.bias;
+        const tf = tA + j * gap * (1 + gauss(rng) * 0.1 * (1.6 - 1.2 * skill)) + F.bias;
         const dir = kind === 'Ru' ? -1 : 1;
-        const strength = (j === fingers.length - 1 ? 1.08 : 1) * F.strength;   // the last flick lands the accent
+        const strength = dB(F.db) * (j === fingers.length - 1 ? dB(1.5) : 1);   // the last flick lands the accent
         const order = dir > 0 ? set : set.slice().reverse().slice(0, Math.max(3, Math.round(set.length * 0.7)));
-        this.sweep(evs, order, tf, vel0 * strength, dir, 'finger', true, palm, o, loose, false, 0.014);
+        this.sweep(evs, order, tf, vel0 * strength * 0.72, dir, 'finger', true, palm, o, false, 0.045, 0.9);
       });
       return;
     }
 
-    // a finger plucking one string
+    // ---- a finger plucking one string ----
     const finger = kind, F = MOTOR.fingers[finger];
     if (!F) return;
     const s = this.roles[arg];
-    if (s == null) return;
-    let t = t0 + F.bias + gauss(rng) * F.sd * loose * hum;
-    if (pinch) t += gauss(rng) * MOTOR.pinchSpread * loose * hum * 0.5;
-    // a finger asked to repeat faster than it can: it arrives late and softer
-    const lastT = this.lastTimeFinger[finger] ?? -1, minGap = 1 / MOTOR.maxRate[finger];
-    let fatigue = 1;
-    if (lastT >= 0 && t - lastT < minGap) { t = lastT + minGap * (0.9 + 0.1 * rng()); fatigue = 0.85; }
-    this.lastTimeFinger[finger] = t;
-    const vel = clamp(vel0 * F.strength * fatigue * (rest ? 1.12 : 1) * (1 + gauss(rng) * vsd), 0.03, 1);
+    if (s == null || this.melody.has(s)) return;
     const thumb = finger === 'p';
-    // planting: the finger rests on its string just before plucking it, cutting what was ringing there
-    if (S.plant && !thumb && t - this.ringing[s] > 0.05) evs.push({ type: 'touch', s, amt: 50, dur: 0.03, t: t - 0.035, nail: S.nail });
-    evs.push({ type: 'pluck', s, midi: midiOf(s), t, dir: thumb ? 1 : -1, style: F.style, nail: S.nail, rest, palm: palm && thumb,
-      vel, dead: v.frets[s] < 0, pickPos: (o.pickPos || 0.2) * (thumb ? 1.12 : 0.92) * (1 + gauss(rng) * 0.05 * hum) });
+    // inside a plucked chord the measured first-to-last spread already carries the timing scatter
+    let t = tA + F.bias + this.jitter(sd) * (chordOff ? 0.3 : 1) + (chordOff ? chordOff[finger] ?? 0 : 0);
+    // tremolo: the thumb arrives late after the a-m-i run (the "gallop"), less so for a strong player
+    if (S.preP && thumb) t += (0.12 - 0.09 * skill) * sd;
+    // a finger asked to repeat faster than it can arrives late and softer
+    const minGap = F.minGap * (1.3 - 0.3 * skill), last = this.lastT[finger];
+    let tired = 1;
+    if (last != null && t - last < minGap) { t = last + minGap * (0.95 + 0.1 * rng()); tired = dB(-1.5); }
+    const rate = this.rateFactor(finger, t);
+    this.lastT[finger] = t;
+    let level = dB(thumb ? (S.thumbDb ?? F.db) : F.db + (finger === 'a' ? -1.5 * (1 - skill) : 0));
+    if (rest) level *= dB(2.5);
+    const vel = clamp(vel0 * level * tired * this.velNoise(), 0.03, 1);
+    if (this.slip(evs, s, t, thumb ? 1 : -1, F.style, vel)) return;
+    // sequential planting: the finger settles on its string a moment before plucking it, cutting what rang there
+    if (S.plant && !thumb && t - this.ringing[s] > 0.05) evs.push({ type: 'touch', s, amt: 50, dur: 0.6 * sd, t: t - 0.6 * sd - 0.004, nail: S.nail });
+    evs.push({ type: 'pluck', s, midi: this.midiOf(s), t, dir: thumb ? 1 : -1, style: F.style, nail: S.nail, rest, palm: palm && thumb,
+      vel, dead: v.frets[s] < 0, pickPos: (o.pickPos || 0.2) * (thumb ? 1.12 : 0.95) * (1 + gauss(rng) * 0.05 * hum) });
     this.ringing[s] = t;
     // where the finger goes next: fingers follow through toward the bass strings (toward the palm), the thumb
     // toward the treble strings
     const nb = thumb ? s + 1 : s - 1;
-    if (nb < 0 || nb > 5) return;
     if (rest) { // the stroke ends on the neighbour and stays there until the finger moves on
-      evs.push({ type: 'touch', s: nb, amt: 45, dur: 0.09 + 0.08 * rng(), t: t + 0.004, nail: false });
-      return;
+      if (nb >= 0 && nb <= 5 && !this.melody.has(nb)) evs.push({ type: 'touch', s: nb, amt: 45, dur: 0.06 + 0.1 * rng(), t: t + 0.02 + 0.02 * rng() });
+    } else {
+      const pB = lerp(MOTOR.brush, skill) * (S.brush ?? 1) * (o.brushes ?? 1) * rate * (0.6 + 0.6 * this.vel);
+      if (rng() < pB) this.graze(evs, nb, t + 0.004 + 0.006 * rng(), F.style, vel, thumb ? 1 : -1);
     }
-    const pB = MOTOR.brush * (S.brush ?? 1) * (o.brushes ?? 1) * loose * (0.6 + 0.6 * this.vel);
-    if (rng() < pB) this.graze(evs, nb, t + 0.004 + 0.006 * rng(), F.style, vel, thumb ? 1 : -1);
+    // the ring finger, poorly individuated, is dragged along by the middle finger
+    if (finger === 'm' && rng() < lerp(MOTOR.drag, skill) * (o.brushes ?? 1) * rate * (S.brush ?? 1)) this.graze(evs, s + 1, t + 0.008, 'finger', vel, -1);
+    // in alternating-bass styles the thumb settles on the next string after a bass note, muting it
+    if (thumb && S.thumbRest && nb <= 3 && rng() < S.thumbRest && !this.melody.has(nb)) evs.push({ type: 'touch', s: nb, amt: 35, dur: 0.05 + 0.15 * rng(), t: t + 0.03 });
   }
 
-  // an unintended contact with string s: a ringing string gets briefly damped; a quiet one gets a faint pluck;
-  // a string the fretting hand is muting gives a dead tick
+  // a pluck that goes wrong (rare for a strong player): missed, the neighbouring string instead, or late and soft
+  slip(evs, s, t, dir, style, vel) {
+    const rng = this.h.rng, o = this.h.options();
+    if (rng() >= lerp(MOTOR.slip, this.skill()) * (o.brushes ?? 1) * this.hum()) return false;
+    const r = rng(), v = this.v, open = this.h.open();
+    if (r < 0.33) return true;                       // missed entirely
+    if (r < 0.66) {                                  // caught the neighbour instead
+      const n = clamp(s + (rng() < 0.5 ? -1 : 1), 0, 5);
+      evs.push({ type: 'pluck', s: n, midi: v.frets[n] >= 0 ? open[n] + v.frets[n] : open[n], t: t + 0.01, dir, style, dead: v.frets[n] < 0, vel: clamp(vel * 0.6, 0.03, 1), pickPos: 0.2 });
+      return true;
+    }
+    evs.push({ type: 'pluck', s, midi: this.midiOf(s), t: t + 0.01 + 0.02 * rng(), dir, style, vel: clamp(vel * dB(-4.5), 0.03, 1), pickPos: 0.2 });
+    return true;                                     // late and soft
+  }
+
+  // an unintended contact with string s: a ringing string gets briefly damped; a quiet one gets a faint pluck
+  // (-20 to -30 dB); a string the fretting hand is muting gives a dead tick
   graze(evs, s, t, style, vel, dir) {
-    if (s < 0 || s > 5) return;
+    if (s < 0 || s > 5 || this.melody.has(s)) return;
     const v = this.v, open = this.h.open(), rng = this.h.rng;
     const ringingNow = t - this.ringing[s] < 1.2;
     if (v.frets[s] < 0) { evs.push({ type: 'pluck', s, midi: open[s], t, dir, style, dead: true, vel: clamp(vel * 0.25, 0.02, 0.3), pickPos: 0.2 }); return; }
     if (ringingNow && rng() < 0.6) { evs.push({ type: 'touch', s, amt: 22, dur: 0.02 + 0.03 * rng(), t }); return; }
-    evs.push({ type: 'pluck', s, midi: open[s] + v.frets[s], t, dir, style, vel: clamp(vel * (0.12 + 0.12 * rng()), 0.02, 0.25), pickPos: 0.2 });
+    evs.push({ type: 'pluck', s, midi: open[s] + v.frets[s], t, dir, style, vel: clamp(vel * (0.08 + 0.07 * rng()), 0.02, 0.2), pickPos: 0.2 });
     this.ringing[s] = t;
   }
 
-  // a stroke across several strings (pick, nails, thumb); `dead` = palm muting them as it strikes
-  sweep(evs, order, t0, vel, dir, style, nail, palm, o, loose, dead = false, total) {
-    const rng = this.h.rng, v = this.v, open = this.h.open(), n = order.length, hum = (o.humanize ?? 0.6) / 0.6;
+  // a stroke across several strings (pick, nails, thumb); `dead` = palm muting them as it strikes; `keep`: how much
+  // of a ringing string survives the sweep
+  sweep(evs, order, t0, vel, dir, style, nail, palm, o, dead = false, total, keep) {
+    const rng = this.h.rng, v = this.v, open = this.h.open(), n = order.length, hum = this.hum();
     const T = (total ?? (o.speed ?? 0.045) * (1.4 - 0.7 * this.vel)) * Math.max(1, n - 1) / 5 * (dir < 0 ? 0.8 : 1);
     order.forEach((s, i) => {
+      if (this.melody.has(s)) return;
       const frac = n > 1 ? i / (n - 1) : 0, md = v.frets[s] < 0 || dead;
-      evs.push({ type: 'pluck', s, midi: v.frets[s] >= 0 ? open[s] + v.frets[s] : open[s], t: t0 + T * Math.pow(frac, 0.85) + gauss(rng) * 0.001 * loose * hum,
-        dir, style, nail, dead: md, palm, bright: dir < 0 ? 1.5 : 1,
-        vel: clamp(vel * (1 - 0.18 * frac) * (1 + gauss(rng) * 0.07 * loose * hum) * (md ? 0.7 : 1), 0.03, 1),
+      const t = t0 + T * Math.pow(frac, 0.85) + gauss(rng) * 0.001 * hum;
+      evs.push({ type: 'pluck', s, midi: md ? open[s] : this.midiOf(s), t, dir, style, nail, dead: md, palm, keep,
+        bright: dir < 0 ? 1.5 : 1, vel: clamp(vel * (1 - 0.18 * frac) * this.velNoise() * (md ? 0.7 : 1), 0.03, 1),
         pickPos: (o.pickPos || 0.2) * (1 + gauss(rng) * 0.04 * hum) });
-      this.ringing[s] = t0;
+      this.ringing[s] = t;
     });
   }
+
+  // ---- melody over the pattern ----
+  // A note played while the pattern runs is a melody note: it takes a string near the hand (preferring the treble
+  // strings), the pattern leaves that string alone while the note is held, and the finger follows the classical
+  // crossing rules (alternate; to a higher string i->m->a, to a lower one a->m->i; Niedt) with a rest stroke when the
+  // next lower string isn't needed by the pattern.
+  playMelody(midi, vel, t) {
+    if (!this.v) return null;
+    const open = this.h.open(), S = this.style(), rng = this.h.rng;
+    let best = -1, bc = Infinity;
+    const fr = this.v.frets.filter(f => f > 0), pos = fr.length ? Math.min(...fr) : 0;
+    for (let s = 2; s < 6; s++) {
+      const f = midi - open[s];
+      if (f < 0 || f > 15) continue;
+      let c = (5 - s) * 0.6 + Math.abs(f - (pos + 1)) * 0.5 + (f === 0 ? -0.3 : 0);
+      if (s === this.roles.B || s === this.roles.A) c += 4;
+      if (c < bc) { bc = c; best = s; }
+    }
+    if (best < 0) return null;
+    const s = best, last = this.lastMel;
+    let finger;
+    if (!last) finger = s >= 5 ? 'a' : 'm';
+    else if (s > last.s) finger = last.finger === 'i' ? 'm' : 'a';
+    else if (s < last.s) finger = last.finger === 'a' ? 'm' : 'i';
+    else finger = last.finger === 'i' ? 'm' : 'i';
+    this.lastMel = { s, finger };
+    this.melody.set(s, midi);
+    const nb = s - 1, needed = nb === this.roles.T1 || nb === this.roles.T2 || nb === this.roles.T3;
+    const rest = !S.pick && s >= 3 && !needed && rng() < 0.7;
+    const F = MOTOR.fingers[finger];
+    const tt = t + F.bias + this.jitter(this.stepDur());
+    const evs = [];
+    if (S.pick) evs.push({ type: 'pluck', s, midi, t: tt, dir: 1, style: 'pick', vel: clamp(vel * this.velNoise(), 0.03, 1), pickPos: 0.2 });
+    else {
+      evs.push({ type: 'pluck', s, midi, t: tt, dir: -1, style: 'finger', nail: S.nail, rest, vel: clamp(vel * dB(1.5) * (rest ? dB(2.5) : 1) * this.velNoise(), 0.03, 1), pickPos: 0.19 });
+      if (rest && nb >= 0) evs.push({ type: 'touch', s: nb, amt: 45, dur: 0.08 + 0.08 * rng(), t: tt + 0.025 });
+    }
+    this.lastT[finger] = tt; this.ringing[s] = tt;
+    this.h.send(evs);
+    return s;
+  }
+  releaseMelody(s) { this.melody.delete(s); }
 }
 
 root.RightHand = RightHand;
@@ -2469,6 +2625,7 @@ class StrumEngine {
     this.handPos = 0; this.lastShapeTime = -1;
     this.shape = null;
     this.lookahead = 0.006;
+    this.melodyKeys = new Map();
     this.hand = root.RightHand ? new root.RightHand({ send: (e) => this.send(e), now: () => this.now(), rng: () => this.rng(), open: () => this.open(), options: () => this.o }) : null;
   }
   set(opts) { Object.assign(this.o, opts); }
@@ -2487,6 +2644,7 @@ class StrumEngine {
     }
   }
   noteOff(midi) {
+    if (this.melodyKeys.has(midi)) { this.hand.releaseMelody(this.melodyKeys.get(midi)); this.melodyKeys.delete(midi); return; }
     const i = this.pending.findIndex(p => p.midi === midi);
     if (i >= 0) { // released before the chord was even voiced: play it anyway, then let it go
       this.pending[i].releaseAfter = true;
@@ -2504,6 +2662,12 @@ class StrumEngine {
     clearTimeout(this.timer); this.timer = null;
     const notes = this.pending; this.pending = [];
     if (!notes.length) return;
+    // a single note over a running pattern is melody, taken by the plucking fingers on a string of its own
+    if (notes.length === 1 && this.o.mode === 'pattern' && this.hand && this.hand.running) {
+      const n = notes[0], t0m = Math.max(this.now() + this.lookahead, n.t + this.o.gather * 0.5);
+      const s = this.hand.playMelody(this.fold(n.midi, this.open()), n.vel, t0m);
+      if (s != null) { this.melodyKeys.set(n.midi, s); if (n.releaseAfter) setTimeout(() => this.noteOff(n.midi), 120); return; }
+    }
     const t0 = Math.max(this.now() + this.lookahead, Math.min(...notes.map(n => n.t)) + this.o.gather);
     const vel = Math.max(...notes.map(n => n.vel));
     const midis = notes.map(n => n.midi);
@@ -3073,18 +3237,31 @@ function fillSelect(id, entries, val) {
   el.value = val;
 }
 // ---------- pick ----------
-const pick = { type: store.get('pk.type', 'cell71'), grip: store.get('pk.grip', 'normal'), angle: +store.get('pk.angle', 20) };
+const pick = { type: store.get('pk.type', 'cell71'), grip: store.get('pk.grip', 'normal'), angle: +store.get('pk.angle', 20), Es: store.get('pk.Es', null) };
+// hardness slider: log surface modulus from 1 MPa (felt) to 200 GPa (steel); starts at the material's own value
+const hardToEs = (v) => Math.pow(10, 6 + v / 100 * 5.3), esToHard = (Es) => Math.round((Math.log10(Es) - 6) / 5.3 * 100);
+function showHard() {
+  const P = GUITAR_PICKS[pick.type] || GUITAR_PICKS.cell71, Es = pick.Es || P.Es || P.E;
+  $('pickHard').value = esToHard(Es);
+  $('pickHardOut').textContent = guitarShore.fromEs(Es).replace('harder than Shore D 90', 'D90+') .replace('Shore ', '') + (pick.Es ? '' : '*');
+  $('pickHard').title = guitarShore.fromEs(Es) + (pick.Es ? '' : ' (the material\'s own)');
+}
 function applyPick() {
   setEngine({ pick: Object.assign({}, pick) });
   // a pick that lets go of each string sooner also passes through a strum faster (mid-neck string, medium attack)
   const M = guitarPickModel, P = GUITAR_PICKS;
-  const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
+  const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip, pick.Es), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
   strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
 }
 function bindHandStyle() {
   fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
   strum.set({ style: $('handStyle').value });
-  $('handStyle').addEventListener('change', () => { strum.set({ style: $('handStyle').value }); store.set('o.style', $('handStyle').value); });
+  $('handStyle').addEventListener('change', () => {
+    const k = $('handStyle').value; strum.set({ style: k }); store.set('o.style', k);
+    // each style starts at its typical tempo unless a MIDI clock is setting it
+    const clocked = clockTicks.length === 25 && performance.now() - clockTicks[24] < 1000;
+    if (!clocked && HAND_STYLES[k].tempo) { $('bpm').value = HAND_STYLES[k].tempo; $('bpmOut').textContent = HAND_STYLES[k].tempo; strum.set({ bpm: HAND_STYLES[k].tempo }); store.set('s.bpm', HAND_STYLES[k].tempo); }
+  });
 }
 // MIDI clock (24 per quarter note): tempo from the spacing of the last 24 ticks; Start realigns the pattern grid
 const clockTicks = [];
@@ -3102,7 +3279,9 @@ function onClock(st, ts) {
 function bindPick() {
   fillSelect('pickType', Object.entries(GUITAR_PICKS).map(([k, v]) => [k, v.name]), pick.type);
   $('grip').value = pick.grip; $('pickAngle').value = pick.angle; $('pickAngleOut').textContent = pick.angle + '°';
-  $('pickType').addEventListener('change', () => { pick.type = $('pickType').value; store.set('pk.type', pick.type); applyPick(); });
+  showHard();
+  $('pickType').addEventListener('change', () => { pick.type = $('pickType').value; pick.Es = null; store.set('pk.type', pick.type); store.set('pk.Es', null); showHard(); applyPick(); });
+  $('pickHard').addEventListener('input', () => { pick.Es = hardToEs(+$('pickHard').value); store.set('pk.Es', pick.Es); showHard(); applyPick(); });
   $('grip').addEventListener('change', () => { pick.grip = $('grip').value; store.set('pk.grip', pick.grip); applyPick(); });
   $('pickAngle').addEventListener('input', () => { pick.angle = +$('pickAngle').value; $('pickAngleOut').textContent = pick.angle + '°'; store.set('pk.angle', pick.angle); applyPick(); });
 }
