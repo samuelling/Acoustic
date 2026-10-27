@@ -90,6 +90,25 @@ Choose **Pattern**, a style and a tempo, and hold a chord: the right hand plays 
   - Bossa off-beats come ~2.5% of a beat early (Brazilian microtiming, Gouyon 2007).
 - **Tempo** comes from the slider or from MIDI clock; MIDI Start realigns the pattern. Chord pads latch the pattern (tap the playing chord to stop), and the sustain pedal keeps it going after keys are released.
 
+### 6. The fretting hand's own sounds (`friction`, `glide` in `src/modal.js`; `departure`, `arrival`, `tryGlide` in `src/strum.js`)
+
+No sample or noise layer is added on top. The incidental sounds come from the hand's motion acting on the string:
+
+- **Friction on a winding.** A fingertip moving along a wound string sinks into each groove and is pushed out by the next wrap: one smooth force pulse per wrap, at f = speed / winding pitch (wrap wire 0.18–0.36 mm on a bronze set, 0.12–0.16 mm on nylon basses).
+  - The force acts along the string's axis, so it drives the string's own longitudinal modes. These push on the bridge, and from there the body, mics and room carry it like every other sound; a little is heard straight from the fingertip.
+  - This reproduces what Pakarinen, Penttinen & Bank (2007) measured: lowpass noise with time-varying harmonics set by the sliding speed, and fixed peaks from the longitudinal modes.
+  - Plain strings only hiss faintly.
+- **The hand's path is minimum-jerk** (Flash & Hogan 1985), with its bell-shaped speed profile, so a squeak rises in pitch and falls again: about 2 kHz as the hand accelerates, 3 kHz at full speed, under 1 kHz as it settles, for a 4-fret move on the low E.
+- **Gestures.** A keyboard reveals the next chord only when it arrives, so a change becomes two physical events:
+  - *Departure*: on letting go of a chord, fingers on wound strings drag briefly as the hand lifts away, the pressure fading out.
+  - *Arrival*: on a chord needing a position shift, the guide finger (one staying on its string) slides into place, slowing and pressing down as the strum begins.
+  - Weaker players squeak more often and harder.
+- **Fretted glides.** A new single note pressed while the previous one is still held (up to 7 semitones, on a string that reaches both) slides along the string instead of being plucked.
+  - The string is stopped by whichever fret lies just ahead of the finger, so pitch moves in semitone steps as the finger crosses each wire. Steps are quick mid-move and slow at the ends, following the minimum-jerk path.
+  - Each crossing loses a little energy and bumps the bridge.
+  - The winding sings under the pressed finger.
+  - This staircase is what separates a fretted glide from a slide guitar's continuous one.
+
 ## Controls
 
 - MIDI: notes, sustain (CC64 = let ring), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st).
@@ -134,6 +153,8 @@ The analyzer reports per-partial starting level and T60, inharmonicity, spectral
 - Wing & Kristofferson (1973), the timing of interresponse intervals; Vorberg & Wing (1996); Repp (2005), sensorimotor synchronization review.
 - Friberg & Sundström (2002), swing ratios and ensemble timing in jazz, Music Perception 19; Honing & de Haas (2008), Music Perception 25; Gouyon (2007), microtiming in samba de roda, SBCM.
 - Carral & Paset (2008), plectrum thickness and the radiated sound of the guitar, Acoustics'08; Perng, Smith & Rossing (2010), harpsichord plectrum–string interaction, DAFx; Chadefaux et al. (2012), harp plucking, JASA 131.
+- Pakarinen, Penttinen & Bank (2007), analysis of handling noises on wound strings, JASA 122 EL197; Pakarinen, Puputti & Välimäki (2008), slide guitar synthesizer with gestural control, NIME.
+- Flash & Hogan (1985), the coordination of arm movements: minimum-jerk model, J. Neuroscience 5.
 - Niedt, D., choosing right-hand fingering (crossing rules); Werner, S., planting; Tennant, *Pumping Nylon*.
 - Pakarinen, Penttinen & Bank (2007), handling noises on wound strings, JASA-EL.
 - Carcagno, Bucknall, Woodhouse, Fritz & Plack (2018), effect of back wood choice on steel-string guitars, JASA.

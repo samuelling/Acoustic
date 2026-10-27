@@ -186,6 +186,7 @@ class StrumEngine {
     this.o = {
       mode: 'pick',          // 'pick' | 'finger' | 'pattern' (the right hand plays a style's pattern on held chords)
       style: 'travis', bpm: 96, skill: 0.6, brushes: 1,
+      legato: 'slide',       // overlapping single notes up to 7 semitones apart: 'slide' along the string | 'off'
       voicing: 'played',     // 'played' | 'guitarize'
       direction: 'auto',     // 'auto' | 'down' | 'up' | 'alternate'
       speed: 0.055,          // seconds for a 6-string stroke at medium velocity (measured strums: 26-62 ms)
@@ -212,6 +213,7 @@ class StrumEngine {
     this.shape = null;
     this.lookahead = 0.006;
     this.melodyKeys = new Map();
+    this.lastSingle = null;   // { key, midi, s, releasedAt }
     this.hand = root.RightHand ? new root.RightHand({ send: (e) => this.send(e), now: () => this.now(), rng: () => this.rng(), open: () => this.open(), options: () => this.o }) : null;
   }
   set(opts) { Object.assign(this.o, opts); }
@@ -230,6 +232,7 @@ class StrumEngine {
     }
   }
   noteOff(midi) {
+    if (this.lastSingle && this.lastSingle.key === midi) this.lastSingle.releasedAt = this.now();
     if (this.melodyKeys.has(midi)) { this.hand.releaseMelody(this.melodyKeys.get(midi)); this.melodyKeys.delete(midi); return; }
     const i = this.pending.findIndex(p => p.midi === midi);
     if (i >= 0) { // released before the chord was even voiced: play it anyway, then let it go
@@ -248,11 +251,13 @@ class StrumEngine {
     clearTimeout(this.timer); this.timer = null;
     const notes = this.pending; this.pending = [];
     if (!notes.length) return;
+    // a note joined legato to the previous one, a few frets away: the finger slides there instead of plucking
+    if (notes.length === 1 && this.o.legato === 'slide' && this.tryGlide(notes[0])) return;
     // a single note over a running pattern is melody, taken by the plucking fingers on a string of its own
     if (notes.length === 1 && this.o.mode === 'pattern' && this.hand && this.hand.running) {
       const n = notes[0], t0m = Math.max(this.now() + this.lookahead, n.t + this.o.gather * 0.5);
       const s = this.hand.playMelody(this.fold(n.midi, this.open()), n.vel, t0m);
-      if (s != null) { this.melodyKeys.set(n.midi, s); if (n.releaseAfter) setTimeout(() => this.noteOff(n.midi), 120); return; }
+      if (s != null) { this.melodyKeys.set(n.midi, s); this.lastSingle = { key: n.midi, midi: this.fold(n.midi, this.open()), s, releasedAt: -1, melody: true }; if (n.releaseAfter) setTimeout(() => this.noteOff(n.midi), 120); return; }
     }
     const t0 = Math.max(this.now() + this.lookahead, Math.min(...notes.map(n => n.t)) + this.o.gather);
     const vel = Math.max(...notes.map(n => n.vel));
@@ -264,7 +269,7 @@ class StrumEngine {
     if (!v) return;
     // key -> strings
     const id = ++this.gid;
-    const group = { keys: new Set(), strings: new Set() };
+    const group = { keys: new Set(), strings: new Set(), frets: v.frets.slice() };
     this.groups.set(id, group);
     const sounding = Object.keys(v.map).map(Number);
     for (const n of notes) {
@@ -275,13 +280,15 @@ class StrumEngine {
     }
     for (const s of sounding) { this.takeString(s, id); group.strings.add(s); }
     const shift = Math.abs(v.pos - this.handPos);
+    const oldFrets = this.lastFrets;
+    this.lastFrets = v.frets.slice();
     this.handPos = v.pos;
     if (sounding.length > 1) { this.shape = v.frets; this.onVoicing(v.frets); } // a chord becomes the shape the swipe area strums
     const evs = [];
-    if (shift >= 2 && t0 - this.lastShapeTime < 1.5) this.squeaks(evs, v, shift, t0);
+    if (shift >= 1 && oldFrets && t0 - this.lastShapeTime < 2) this.arrival(evs, oldFrets, v.frets, t0);
     this.lastShapeTime = t0;
     if (this.o.mode === 'pattern' && this.hand && sounding.length > 1) this.hand.chord(v, vel, t0);
-    else if (sounding.length === 1) this.single(evs, sounding[0], v.map[sounding[0]], vel, t0);
+    else if (sounding.length === 1) { this.single(evs, sounding[0], v.map[sounding[0]], vel, t0); this.lastSingle = { key: notes[0].midi, midi: v.map[sounding[0]], s: sounding[0], releasedAt: -1 }; }
     else this.chord(evs, v, vel, t0);
     this.send(evs);
     // keys that were released during the gather window
@@ -339,7 +346,10 @@ class StrumEngine {
     const strs = [...h.strings], gid = h.group;
     this.later(() => {
       const evs = [];
-      for (const s of strs) if (this.owner[s] === gid && !this.anyHeldOn(s)) evs.push({ type: 'damp', s, time: 0.05 + 0.04 * this.rng(), t: this.now() + 0.004 });
+      const left = strs.filter(s => this.owner[s] === gid && !this.anyHeldOn(s));
+      for (const s of left) evs.push({ type: 'damp', s, time: 0.05 + 0.04 * this.rng(), t: this.now() + 0.004 });
+      const g = this.groups.get(gid);
+      if (g && g.frets) this.departure(evs, g.frets, left);
       this.send(evs);
     }, gid, quiet ? 0 : undefined);
   }
@@ -356,7 +366,9 @@ class StrumEngine {
   dampGroup(id) {
     const g = this.groups.get(id); if (!g || g.keys.size) return;
     const evs = [];
-    for (const s of g.strings) if (this.owner[s] === id) evs.push({ type: 'damp', s, time: 0.05 + 0.04 * this.rng(), t: this.now() + 0.004 + this.rng() * 0.01 });
+    const left = [...g.strings].filter(s => this.owner[s] === id);
+    for (const s of left) evs.push({ type: 'damp', s, time: 0.05 + 0.04 * this.rng(), t: this.now() + 0.004 + this.rng() * 0.01 });
+    if (g.frets) this.departure(evs, g.frets, left);
     this.send(evs);
     this.groups.delete(id);
   }
@@ -451,21 +463,73 @@ class StrumEngine {
     });
   }
 
-  squeaks(evs, v, shift, t0) {
-    const wound = [0, 1, 2, 3].filter(s => v.frets[s] > 0);
-    if (!wound.length || this.rng() > 0.25 + 0.06 * shift) return;
-    const s = wound[Math.floor(this.rng() * wound.length)];
-    evs.push({ type: 'squeak', s, amt: clamp(0.25 + 0.08 * shift, 0, 1), t: Math.max(this.now(), t0 - 0.09) });
+  // ----- the fretting hand's own sounds -----
+  // Position of a fingertip just behind fret f, metres from the nut.
+  fingerX(f) { const L = 0.645, x = (k) => L * (1 - Math.pow(2, -k / 12)); return f <= 0 ? 0.004 : x(f) - 0.3 * (x(f) - x(f - 1)); }
+  // Leaving a chord: fingers on wound strings drag a little along the winding as the hand lifts away (the pressure
+  // fades out over the first part of the move). Where the hand goes next isn't known yet, and doesn't matter: the
+  // sound depends on the strings under the fingers and the hand's speed.
+  departure(evs, frets, strings) {
+    const skill = clamp(this.o.skill ?? 0.6, 0, 1), cand = strings.filter(s => s <= 3 && frets[s] > 0);
+    let n = 0;
+    for (const s of cand.sort(() => this.rng() - 0.5)) {
+      if (n >= 2 || this.rng() > (0.16 + 0.3 * (1 - skill)) / (n + 1)) continue;
+      const x0 = this.fingerX(frets[s]), dir = this.rng() < 0.6 ? 1 : -1;
+      evs.push({ type: 'friction', s, x0, x1: Math.max(0.004, x0 + dir * (0.05 + 0.07 * this.rng())), dur: 0.13 * (1.2 - 0.35 * skill),
+        seg: [0, 0.4 + 0.15 * this.rng()], p0: (0.2 + 0.3 * this.rng()) * (1.3 - 0.5 * skill), p1: 0, t: this.now() + 0.006 + 0.01 * this.rng() });
+      n++;
+    }
+  }
+  // Arriving at a new position: the guide finger (one that stays on its string through the shift) slides into
+  // place, slowing and pressing down just before the strum, so the squeak falls in pitch into the chord.
+  arrival(evs, oldFrets, frets, t0) {
+    const skill = clamp(this.o.skill ?? 0.6, 0, 1);
+    const both = [0, 1, 2, 3].filter(s => frets[s] > 0 && oldFrets[s] > 0 && frets[s] !== oldFrets[s]);
+    const cand = both.length ? both : [0, 1, 2, 3].filter(s => frets[s] > 0);
+    if (!cand.length || this.rng() > 0.3 + 0.4 * (1 - skill)) return;
+    const s = cand[Math.floor(this.rng() * cand.length)];
+    const now = this.now(), tEnd = t0 + 0.018, span = Math.max(0.012, tEnd - now);   // fingers often finish landing as the pick arrives
+    const dur = clamp(span / 0.45, 0.06, 0.22), seg = [Math.max(0, 1 - span / dur), 1];
+    const from = oldFrets[s] > 0 ? oldFrets[s] : Math.max(1, frets[s] + (this.rng() < 0.5 ? -3 : 3));
+    evs.push({ type: 'friction', s, x0: this.fingerX(from), x1: this.fingerX(frets[s]), dur, seg,
+      p0: 0.05, p1: (0.25 + 0.35 * this.rng()) * (1.3 - 0.5 * skill), t: Math.max(now, tEnd - span) });
+  }
+  // Legato single notes: a new note while the previous one is still held (or just let go), up to 7 semitones away
+  // on a string that can reach both, is a slide along that string rather than a new pluck.
+  tryGlide(n) {
+    const ls = this.lastSingle;
+    if (!ls) return false;
+    const held = this.held.has(ls.key) || this.melodyKeys.has(ls.key);
+    if (!held && !(ls.releasedAt >= 0 && this.now() - ls.releasedAt < 0.04)) return false;
+    const open = this.open(), midi = this.fold(n.midi, open);
+    const d = midi - ls.midi, fOld = ls.midi - open[ls.s], fNew = midi - open[ls.s];
+    if (d === 0 || Math.abs(d) > 7 || fOld < 1 || fNew < 1 || fNew > MAXFRET) return false;
+    const t = this.now() + 0.002, skill = clamp(this.o.skill ?? 0.6, 0, 1);
+    const dur = (0.07 + 0.022 * Math.abs(d)) * (1.15 - 0.3 * skill) * (0.85 + 0.3 * this.rng());
+    this.send([{ type: 'glide', s: ls.s, from: ls.midi, to: midi, dur, pressure: 0.6 + 0.3 * this.rng(), t }]);
+    // the new key now owns the string; the old key's release no longer stops it
+    if (ls.melody && this.hand) {
+      this.melodyKeys.delete(ls.key); this.melodyKeys.set(n.midi, ls.s); this.hand.melody.set(ls.s, midi);
+    } else {
+      const id = ++this.gid, frets = [-1, -1, -1, -1, -1, -1]; frets[ls.s] = fNew;
+      this.groups.set(id, { keys: new Set([n.midi]), strings: new Set([ls.s]), frets });
+      this.held.set(n.midi, { strings: new Set([ls.s]), group: id });
+      this.takeString(ls.s, id);
+    }
+    this.lastSingle = { key: n.midi, midi, s: ls.s, releasedAt: -1, melody: ls.melody };
+    this.handPos = Math.max(0, fNew - 1);
+    return true;
   }
 
   // ----- direct control (chord pads and the string swipe area) -----
   setShape(frets) {
+    const oldShape = this.shape;
     this.shape = frets.slice();
     const fr = frets.filter(f => f > 0);
     const pos = fr.length ? Math.min(...fr) : 0;
     const evs = [];
     const now = this.now();
-    if (Math.abs(pos - this.handPos) >= 2 && now - this.lastShapeTime < 1.5) this.squeaks(evs, { frets }, Math.abs(pos - this.handPos), now + 0.05);
+    if (oldShape && Math.abs(pos - this.handPos) >= 1 && now - this.lastShapeTime < 2) this.arrival(evs, oldShape, frets, now + 0.03);
     // strings not in the new shape: the fretting hand mutes them
     if (!this.o.letRing) frets.forEach((f, s) => { if (f < 0) evs.push({ type: 'damp', s, time: 0.06, t: now + 0.005 }); });
     this.handPos = pos;

@@ -130,6 +130,10 @@ function esToShore(Es) {
   let lo = 0, hi = 99; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (shoreToEs('A', m) < Es) lo = m; else hi = m; }
   return 'Shore A ' + Math.round(lo);
 }
+// Pitch of the outer winding (wrap-wire diameter), m, strings low E..G; plain strings have none. Steel: phosphor-bronze
+// 12-53 set; nylon: silver-plated copper basses (finer wire, higher squeak).
+const WIND_PITCH = { steel: [0.36e-3, 0.30e-3, 0.24e-3, 0.18e-3, 0, 0], nylon: [0.16e-3, 0.14e-3, 0.12e-3, 0, 0, 0] };
+let FRIC_GAIN = 0.25, FRIC_AIR = 0.02;    // axial force into the string; share heard straight from the fingertip
 const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip length beyond the fingers
 
 // Quasi-static release: the string (lateral stiffness Ks = T L / (x (L - x))) pushes on the pick face; the pick bends
@@ -427,6 +431,7 @@ class GuitarEngine {
     this.RING = 16384; this.RMASK = this.RING - 1;
     this.bodyIn = new Float64Array(this.RING);    // extra force into the body (pick noise etc.)
     this.dirL = new Float64Array(this.RING); this.dirR = new Float64Array(this.RING);
+    this.lonExt = [0, 1, 2, 3, 4, 5].map(() => new Float64Array(this.RING));  // axial friction force on each string
     this.staticZ = 0; this.staticY = 0;           // released pick load (decays slowly)
     this.radL = this.radR = this.radXL = this.radXR = 0;
     this.yTmp = new Float64Array(6);
@@ -521,7 +526,7 @@ class GuitarEngine {
     v.vy.set(M.vy.subarray(0, n)); v.vz.set(M.vz.subarray(0, n));
     v.wy.set(M.wy.subarray(0, n)); v.wz.set(M.wz.subarray(0, n)); v.gin.set(M.gin.subarray(0, n)); v.single.set(M.single.subarray(0, n));
     v.y1.fill(0, 0, n); v.y2.fill(0, 0, n);
-    v.extra = 0; v.extraTarget = 0; v.appliedExtra = -1; v.detune = 0; v.appliedDetune = 0;
+    v.shift = 0; v.extra = 0; v.extraTarget = 0; v.appliedExtra = -1; v.detune = 0; v.appliedDetune = 0;
     v.nact = 0; v.energy = 0;
     this.updateCoefs(v, true);
     this.setupLongitudinal(this.strings[i], midi);
@@ -605,7 +610,7 @@ class GuitarEngine {
   updateCoefs(v, force) {
     if (!force && Math.abs(v.detune - v.appliedDetune) < 2e-6 && Math.abs(v.extra - v.appliedExtra) < 0.05) return;
     const sr = this.sr, bendR = this.bend === 0 ? 1 : Math.pow(2, this.bend / 12);
-    const dt = (1 + v.detune) * bendR;
+    const dt = (1 + v.detune) * bendR * (v.shift ? Math.pow(2, v.shift / 12) : 1);   // shift: frets slid through
     const ex = v.extra;
     for (let c = 0; c < v.n; c++) {
       const f = v.w[c] / TAU;
@@ -655,6 +660,9 @@ class GuitarEngine {
       case 'touch': this.touchString(ev); break;
       case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
       case 'tap': this.tap(ev); break;
+      case 'friction': this.friction(ev); break;
+      case 'glide': this.glide(ev); break;
+      case 'fretstep': this.fretStep(ev); break;
       case 'squeak': this.squeak(ev); break;
       case 'bend': this.bendTarget = ev.value; break;
       case 'params': this.setParams(ev.params); break;
@@ -811,6 +819,88 @@ class GuitarEngine {
       const at = this.clock & this.RMASK; let p = 0;
       for (let k = 0; k < 240; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * na * Math.exp(-k / 50); p = r; }
     }
+  }
+
+  // ---------- the fretting hand's own sounds ----------
+  // A fingertip moving along a string. On a wound string every wrap of the winding it passes is a small stick-slip
+  // event: a train of friction pulses at f = |v| / winding pitch (Pakarinen, Penttinen & Bank 2007: the noise is
+  // lowpass, with time-varying harmonics set by the sliding speed and fixed peaks from the string's longitudinal
+  // modes). Friction acts along the string's axis, so the pulses drive the string's own longitudinal modes, which
+  // push on the bridge like every other sound here; a little is heard straight from the fingertip. Plain strings
+  // only hiss faintly. The hand follows a minimum-jerk path (Flash & Hogan 1985), so the squeak's pitch rises and
+  // falls with its speed. ev: s, x0, x1 (m from the nut), dur (s, whole movement), seg [from, to] (part of the
+  // movement rendered: departure / arrival), p0, p1 (finger pressure at the segment's ends, 0..1).
+  friction(ev) {
+    const st = this.strings[ev.s]; if (!st) return;
+    const sr = this.sr, P = this.P, ph = P.strings[ev.s];
+    const wound = !!ph.wound, nylon = this.params.preset === 'classical';
+    const pw = WIND_PITCH[nylon ? 'nylon' : 'steel'][ev.s] || 0.25e-3;
+    const seg = ev.seg || [0, 1], dur = Math.max(0.02, ev.dur || 0.15), dx = (ev.x1 ?? 0.05) - (ev.x0 ?? 0);
+    const n = Math.min(this.RING - 256, Math.round(dur * (seg[1] - seg[0]) * sr));
+    if (n < 8) return;
+    const amt = this.params.noise * (ev.amt ?? 1) * (wound ? 1 : 0.18) * (nylon ? 0.8 : 1);
+    if (amt <= 0) return;
+    const ext = this.lonExt[ev.s], start = this.clock & this.RMASK, pan = -0.35 + (ev.s - 2.5) / 12;
+    let ph0 = this.rng(), lp = 0, lp2 = 0;
+    for (let k = 0; k < n; k++) {
+      const u = k / n, tau = seg[0] + (seg[1] - seg[0]) * u;
+      const vel = Math.abs(dx) / dur * 30 * tau * tau * (1 - tau) * (1 - tau);           // minimum-jerk speed, m/s
+      const pr = (ev.p0 ?? 0.5) + ((ev.p1 ?? 0.5) - (ev.p0 ?? 0.5)) * u;
+      const env = Math.min(1, k / 96, (n - k) / 96);
+      let f = 0;
+      if (wound) {
+        // one grab-and-release per wrap: the fingertip sinks into a groove and is pushed out by the next wire, a
+        // smooth force pulse over ~40% of the passing period (a harmonic series at |v| / pitch). The spacing
+        // wanders a little and every grab is a bit different.
+        ph0 += vel / pw / sr * (1 + 0.1 * (this.rng() - 0.5));
+        if (ph0 >= 1) { ph0 -= Math.floor(ph0); st.fricA = amt * pr * Math.pow(vel, 0.6) * (0.7 + 0.6 * this.rng()); }
+        if (ph0 < 0.4) f += (st.fricA || 0) * 0.5 * (1 - Math.cos(TAU * ph0 / 0.4)) * (1 + 0.15 * (this.rng() - 0.5));
+      }
+      // the smooth part of the rub: noise lowpassed at a cutoff that rises with speed
+      const c = Math.min(0.9, (250 + 3500 * vel) * TAU / sr);
+      lp += ((this.rng() * 2 - 1) - lp) * c; lp2 += (lp - lp2) * c;
+      f += lp2 * amt * pr * vel * 0.6;
+      f *= env;
+      ext[(start + k) & this.RMASK] += f * FRIC_GAIN;
+      this.dirL[(start + k) & this.RMASK] += f * FRIC_AIR * (1 - pan); this.dirR[(start + k) & this.RMASK] += f * FRIC_AIR * (1 + pan);
+    }
+  }
+
+  // A fretted glide: the finger slides along the string under pressure. The string is stopped by whichever fret
+  // lies just ahead of the finger, so the pitch moves in semitone steps as the finger crosses each fret wire, with a
+  // little energy lost and a small bump at every crossing. ev: s, from, to (midi), dur (s), pressure.
+  glide(ev) {
+    const st = this.strings[ev.s]; if (!st) return;
+    const v = st.v, L = this.P.scale, sr = this.sr;
+    const fretOf = (m) => Math.round(m - st.open);
+    const a = fretOf(ev.from ?? st.midi), b = fretOf(ev.to), dur = Math.max(0.04, ev.dur || 0.15);
+    if (a === b || a < 0 || b < 0) return;
+    const xf = (k) => L * (1 - Math.pow(2, -k / 12));                    // fret wire k, from the nut
+    const fingerAt = (k) => k <= 0 ? 0.005 : xf(k) - 0.3 * (xf(k) - xf(k - 1));
+    const x0 = fingerAt(a), x1 = fingerAt(b), up = b > a;
+    // when does the finger cross each wire? invert the minimum-jerk path numerically
+    const pos = (tau) => x0 + (x1 - x0) * (10 * tau ** 3 - 15 * tau ** 4 + 6 * tau ** 5);
+    const base = v.shift || 0;
+    for (let k = up ? a : a - 1; up ? k < b : k >= b; k += up ? 1 : -1) {
+      const wire = xf(k);
+      let lo = 0, hi = 1;
+      for (let it = 0; it < 30; it++) { const m = (lo + hi) / 2; if ((pos(m) - wire) * (up ? 1 : -1) < 0) lo = m; else hi = m; }
+      const newFret = up ? k + 1 : k;
+      this.post2({ type: 'fretstep', s: ev.s, shift: base + newFret - a, midi: st.open + newFret, _at: this.clock + Math.round(lo * dur * sr), _staged: true, p: ev.pressure ?? 0.8 });
+    }
+    // the finger presses as it slides: a touch more damping, and the winding sings under it
+    for (const vv of st.voices) { vv.extraTarget = Math.max(vv.extraTarget, 2.5); vv.extraRate = 0.3; }
+    this.friction({ s: ev.s, x0, x1, dur, seg: [0, 1], p0: ev.pressure ?? 0.8, p1: ev.pressure ?? 0.8, amt: 1.3 });
+  }
+  fretStep(ev) {
+    const st = this.strings[ev.s]; if (!st) return;
+    const v = st.v;
+    v.shift = ev.shift; st.midi = ev.midi; st.fret = Math.round(ev.midi - st.open);
+    // the string lifts off one fret and lands on the next: a small loss, and a bump into the bridge
+    for (let q = 0; q < v.nact; q++) { const c = v.act[q]; v.y1[c] *= 0.94; v.y2[c] *= 0.94; }
+    this.updateCoefs(v, true);
+    const at = this.clock & this.RMASK, amp = 0.012 * (ev.p ?? 0.8) * Math.min(1, st.env * 6 + 0.1);
+    for (let k = 0; k < 48; k++) this.bodyIn[(at + k) & this.RMASK] += amp * Math.sin(Math.PI * k / 48) * (this.rng() * 0.6 + 0.7);
   }
 
   // Golpe: a finger or nail tapping the top near the bridge. A half-sine force pulse into the body (flesh ~4 ms,
@@ -972,7 +1062,7 @@ class GuitarEngine {
         if (s.lonN && s.lonG) {
           const sl = own / s.lonT, f2 = s.lonEA * 0.5 * sl * sl;
           s.f2lp += (f2 - s.f2lp) * 0.002;
-          const drive = (f2 - s.f2lp) * s.lonG;
+          const drive = (f2 - s.f2lp) * s.lonG + this.lonExt[j][tIdx]; this.lonExt[j][tIdx] = 0;
           for (let q = 0; q < s.lonN; q++) {
             const y = s.lonC1[q] * s.lonY1[q] - s.lonC2[q] * s.lonY2[q] + drive * s.lonIn[q];
             s.lonY2[q] = s.lonY1[q]; s.lonY1[q] = y; lo += y;
@@ -1122,6 +1212,7 @@ root.GUITAR_HOLDS = HOLDS;
 root.GUITAR_PICKS = PICKS;
 root.GUITAR_GRIPS = GRIPS;
 root.guitarPickModel = pickModel;
+root.guitarFriction = (g, a) => { FRIC_GAIN = g; FRIC_AIR = a; };
 root.guitarShore = { toEs: shoreToEs, fromEs: esToShore };
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {

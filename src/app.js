@@ -312,6 +312,12 @@ function applyPick() {
   const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip, pick.Es), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
   strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
 }
+function bindLegato() {
+  const b = $('legato'), on0 = store.get('o.legatoSlide', true);
+  const set = (on) => { b.setAttribute('aria-pressed', on); strum.set({ legato: on ? 'slide' : 'off' }); store.set('o.legatoSlide', on); };
+  b.addEventListener('click', () => set(b.getAttribute('aria-pressed') !== 'true'));
+  set(on0);
+}
 function bindHandStyle() {
   fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
   strum.set({ style: $('handStyle').value });
@@ -766,7 +772,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); bindLegato(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });
