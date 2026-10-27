@@ -28,7 +28,7 @@ with sync_playwright() as p:
       await w(1500);
     }""")
     pg.click('#recBtn'); pg.wait_for_timeout(300)
-    data = pg.evaluate("""async () => { const a = document.querySelector('#recOut a'); const r = await fetch(a.href); const buf = new Uint8Array(await r.arrayBuffer());
+    data = pg.evaluate("""async () => { const r = await fetch(document.querySelector('#recOut audio').src); const buf = new Uint8Array(await r.arrayBuffer());
       let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000)); return btoa(s); }""")
     open(out, 'wb').write(base64.b64decode(data))
     print('saved', out, 'errors:', logs)

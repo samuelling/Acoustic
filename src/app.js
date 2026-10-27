@@ -116,10 +116,34 @@ function toggleRecord() {
   const name = 'acoustic-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.wav';
   $('recOut').innerHTML = '';
   const audio = document.createElement('audio'); audio.controls = true; audio.src = url;
-  const a = document.createElement('a'); a.href = url; a.download = name; a.textContent = `Save WAV (${secs} s)`;
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = `Save WAV (${secs} s)`;
   const n = document.createElement('span'); n.className = 'note';
-  n.textContent = 'If saving does nothing here, open the GitHub Pages version.';
-  $('recOut').append(audio, a, n);
+  b.addEventListener('click', () => saveRecording(wav, name, url, n));
+  $('recOut').append(audio, b, n);
+}
+// Inside Claude's artifact viewer files go through the downloads capability, which takes .zip but not .wav,
+// so the lossless WAV travels inside a ZIP there. Anywhere else it is a plain WAV download.
+async function saveRecording(wav, name, url, note) {
+  const dl = window.claude && window.claude.use ? await window.claude.use('downloads').catch(() => null) : null;
+  if (dl) {
+    try { await dl.save({ filename: name.replace(/\.wav$/, '.zip'), data: zipStore(name, new Uint8Array(wav)) }); note.textContent = 'Saved as a ZIP containing the WAV.'; }
+    catch (e) { note.textContent = e && e.code === 'declined' ? 'Save cancelled.' : 'Saving is not available in this view.'; }
+    return;
+  }
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let i = 0; i < 256; i++) { let c = i; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[i] = c >>> 0; } return t; })();
+function zipStore(name, data) { // single file, no compression
+  let crc = 0xffffffff; for (let i = 0; i < data.length; i++) crc = CRC[(crc ^ data[i]) & 255] ^ (crc >>> 8); crc = (crc ^ 0xffffffff) >>> 0;
+  const fn = new TextEncoder().encode(name), L = 30 + fn.length, C = 46 + fn.length;
+  const out = new Uint8Array(L + data.length + C + 22), v = new DataView(out.buffer);
+  v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint32(14, crc, true); v.setUint32(18, data.length, true); v.setUint32(22, data.length, true); v.setUint16(26, fn.length, true);
+  out.set(fn, 30); out.set(data, L);
+  let o = L + data.length;
+  v.setUint32(o, 0x02014b50, true); v.setUint16(o + 4, 20, true); v.setUint16(o + 6, 20, true); v.setUint32(o + 16, crc, true); v.setUint32(o + 20, data.length, true); v.setUint32(o + 24, data.length, true); v.setUint16(o + 28, fn.length, true); v.setUint32(o + 42, 0, true);
+  out.set(fn, o + 46); o += C;
+  v.setUint32(o, 0x06054b50, true); v.setUint16(o + 8, 1, true); v.setUint16(o + 10, 1, true); v.setUint32(o + 12, C, true); v.setUint32(o + 16, L + data.length, true);
+  return out;
 }
 function encodeWav(ch, n, sr) {
   const buf = new ArrayBuffer(44 + n * 4), v = new DataView(buf);
