@@ -41,8 +41,10 @@ const PRESETS = {
       // f Hz, Q, effective mass kg normal to the top at the bridge, bridge-motion angle deg, radiation (1 monopole, small for dipoles)
       // Steel-string data: Russell (Hummingbird 103/188/203 Hz), Popp & Rossing (D-28: 102, 193-204 monopoles,
       // 376 dipole, 436 quadrupole); masses from mass-loading studies (Christensen; Iulius), Woodhouse 2004.
-      modes: [[100, 26, 0.6, 2, 0.4], [193, 32, 0.19, 6, 1.0], [204, 34, 0.24, -8, 0.9], [228, 40, 0.42, 14, 0.5],
-              [292, 34, 0.7, 28, 0.55], [376, 36, 0.6, 32, 0.5], [436, 36, 0.8, -30, 0.45]],
+      // + share of the mode's motion in the back (0 top .. 1 back) + radiation pattern over the body regions
+      modes: [[100, 26, 0.6, 2, 0.4, 0.3, 'A0'], [193, 32, 0.19, 6, 1.0, 0.15, 'T11a'], [204, 34, 0.24, -8, 0.9, 0.35, 'T11b'],
+              [228, 40, 0.42, 14, 0.5, 0.8, 'back'], [292, 34, 0.7, 28, 0.55, 0.2, 'xdip'], [376, 36, 0.6, 32, 0.5, 0.15, 'ldip'],
+              [436, 36, 0.8, -30, 0.45, 0.2, 'quad']],
       // above ~480 Hz: statistical modes (Woodhouse): Rayleigh spacing, uniform Q, log-normal masses
       hf: { f0: 480, f1: 9500, spacing: 38, qlo: 30, qhi: 80, mMed: 2.4, mSpread: 0.9, angSd: 30, seed: 3 },
       radFc: 250
@@ -60,8 +62,9 @@ const PRESETS = {
       { T: 96, mu: 0.572e-3, EI: 85e-6, wound: 0, etaF: 7e-5, etaBn: 0.7e-2, etaBu: 0.7e-2, etaA: 2.5, EA: 14600 }],
     damp: { fretted: 0.25 }, polDetune: 0.0016, airScale: 0.75, plainEtaF: 3.6e-4,
     body: {
-      modes: [[118, 22, 0.5, 2, 0.45], [214, 30, 0.17, 6, 1.0], [230, 32, 0.22, -8, 0.9], [262, 38, 0.38, 14, 0.5],
-              [330, 34, 0.6, 28, 0.55], [415, 36, 0.55, 32, 0.5], [480, 36, 0.7, -30, 0.45]],
+      modes: [[118, 22, 0.5, 2, 0.45, 0.3, 'A0'], [214, 30, 0.17, 6, 1.0, 0.15, 'T11a'], [230, 32, 0.22, -8, 0.9, 0.35, 'T11b'],
+              [262, 38, 0.38, 14, 0.5, 0.8, 'back'], [330, 34, 0.6, 28, 0.55, 0.2, 'xdip'], [415, 36, 0.55, 32, 0.5, 0.15, 'ldip'],
+              [480, 36, 0.7, -30, 0.45, 0.2, 'quad']],
       hf: { f0: 520, f1: 9500, spacing: 44, qlo: 30, qhi: 80, mMed: 2.2, mSpread: 0.9, angSd: 30, seed: 5 },
       radFc: 290
     },
@@ -79,8 +82,8 @@ const PRESETS = {
     damp: { fretted: 0.25 }, polDetune: 0.002, airScale: 0.6, plainEtaF: 0,
     body: {
       // Woodhouse 2004 classical guitar fit: 91 Hz Q25, 205 Hz Q47, 225 Hz Q59; masses from his admittance peaks
-      modes: [[91, 25, 0.6, 2, 0.45], [205, 45, 0.13, 6, 1.0], [225, 55, 0.38, -10, 0.8], [280, 25, 0.6, 30, 0.55],
-              [420, 40, 1.0, -28, 0.45]],
+      modes: [[91, 25, 0.6, 2, 0.45, 0.3, 'A0'], [205, 45, 0.13, 6, 1.0, 0.15, 'T11a'], [225, 55, 0.38, -10, 0.8, 0.7, 'back'],
+              [280, 25, 0.6, 30, 0.55, 0.2, 'xdip'], [420, 40, 1.0, -28, 0.45, 0.15, 'ldip']],
       hf: { f0: 470, f1: 8500, spacing: 38, qlo: 30, qhi: 80, mMed: 2.8, mSpread: 0.9, angSd: 30, seed: 7 },
       radFc: 250
     },
@@ -97,14 +100,71 @@ function gaussFrom(rng) { return (rng() + rng() + rng() + rng() - 2) * 1.2247; }
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 // ---------------- body ----------------
+// ---------------- construction & contact ----------------
+// Multipliers for top- and back-dominated modes: f (frequency), m (effective mass), dq (added loss 1/Q),
+// rad (radiation); finish adds loss rising with frequency; holding adds back/top loss and a small shift.
+const WOODS = {
+  top: {
+    sitka:     { name: 'Sitka spruce', f: 1, m: 1, dq: 0, rad: 1 },
+    adirondack:{ name: 'Adirondack spruce', f: 1.03, m: 1.0, dq: -0.002, rad: 1.05 },
+    engelmann: { name: 'Engelmann spruce', f: 0.97, m: 0.95, dq: 0.001, rad: 1.03 },
+    cedar:     { name: 'Western red cedar', f: 0.96, m: 0.93, dq: 0.004, rad: 1.06 },
+    redwood:   { name: 'Redwood', f: 0.97, m: 0.97, dq: 0.003, rad: 1.02 },
+    mahogany:  { name: 'Mahogany top', f: 0.92, m: 1.25, dq: 0.004, rad: 0.85 },
+    koa:       { name: 'Koa top', f: 0.95, m: 1.35, dq: 0.002, rad: 0.82 }
+  },
+  back: {
+    indian:    { name: 'Indian rosewood', f: 1, m: 1, dq: 0, rad: 1 },
+    brazilian: { name: 'Brazilian rosewood', f: 1.02, m: 1.02, dq: -0.003, rad: 1.02 },
+    mahogany:  { name: 'Mahogany', f: 0.95, m: 0.8, dq: 0.004, rad: 0.95 },
+    maple:     { name: 'Maple', f: 1.05, m: 0.9, dq: 0.007, rad: 0.92 },
+    koa:       { name: 'Koa', f: 1.0, m: 0.95, dq: 0.002, rad: 0.97 },
+    walnut:    { name: 'Walnut', f: 0.98, m: 0.88, dq: 0.004, rad: 0.95 },
+    sapele:    { name: 'Sapele', f: 0.98, m: 0.9, dq: 0.004, rad: 0.95 }
+  }
+};
+// Player contact (Le Carrou, Pate & Chomette 2019: damping always rises, frequencies move < 2-5%; Woodhouse 2004:
+// low-mode damping depends strongly on how the guitar is held, little above ~300 Hz). Back-dominated modes take the
+// most: torso against the back roughly halves their Q; A0 and T(1,1) gain ~20-30% damping.
+const HOLDS = {
+  stand:  { name: 'On a stand', back: 0, top: 0, fshift: 0 },
+  seated: { name: 'Held, seated', back: 0.03, top: 0.002, fshift: -0.012 },
+  firm:   { name: 'Hugged close', back: 0.05, top: 0.004, fshift: -0.02 }
+};
+function constructionFactors(b) {
+  const top = WOODS.top[b.top] || WOODS.top.sitka, back = WOODS.back[b.back] || WOODS.back.indian;
+  const hold = HOLDS[b.hold] || HOLDS.seated;
+  const finishDq = b.finish === 'poly' ? 0.004 : b.finish === 'none' ? -0.002 : 0;
+  const lowF = b.bracing === 'scalloped' ? 0.96 : b.bracing === 'forward' ? 0.97 : 1;
+  return { top, back, hold, finishDq, lowF };
+}
+
+// Region patterns of the low modes over [hole, bridge, bass, treble, tail, upper, back] (volume-velocity shares)
+const REGION_PATTERNS = {
+  A0:   [0.55, 0.10, 0.10, 0.10, 0.05, 0.02, 0.08],   // air pumping through the soundhole, top and back breathing in phase
+  T11a: [-0.25, 0.30, 0.25, 0.25, 0.15, 0.05, -0.10], // top monopole, soundhole air out of phase
+  T11b: [0.15, 0.30, 0.20, 0.20, 0.12, 0.03, -0.35],  // top monopole coupled to the back
+  back: [0.10, -0.08, -0.06, -0.06, -0.04, 0.0, 0.80], // back plate monopole
+  xdip: [0.0, 0.0, 0.45, -0.45, 0.0, 0.0, 0.05],       // cross dipole: bass vs treble halves
+  ldip: [-0.15, 0.20, 0.10, 0.10, 0.35, -0.30, 0.0],   // long dipole: below vs above the bridge
+  quad: [0.0, 0.0, 0.30, -0.30, -0.20, 0.20, 0.0]
+};
+const NREG = 7, REG_BACK = 6;
+
 class Body {
-  constructor(spec, sr, sizeScale, eco) {
+  constructor(spec, sr, sizeScale, eco, build) {
     const rng = makeRng(spec.hf.seed || 1);
-    const f = [], Q = [], m = [], th = [], rad = [];
-    for (const md of spec.modes) { f.push(md[0] * sizeScale); Q.push(md[1]); m.push(md[2]); th.push(md[3] * Math.PI / 180); rad.push(md[4]); }
+    const K = constructionFactors(build || {});
+    const f = [], Q = [], m = [], th = [], rad = [], pb = [], pat = [];
+    for (const md of spec.modes) {
+      f.push(md[0] * sizeScale); Q.push(md[1]); m.push(md[2]); th.push(md[3] * Math.PI / 180); rad.push(md[4]);
+      pb.push(md[5] ?? 0.2); pat.push(REGION_PATTERNS[md[6]] || REGION_PATTERNS.T11a);
+    }
+    const nLow = f.length;
     const H = spec.hf;
     // Rayleigh-distributed spacings with mean H.spacing (Woodhouse's statistical high-frequency body)
     let fr = H.f0;
+    const region = [];
     while (fr < H.f1) {
       const g1 = gaussFrom(rng), g2 = gaussFrom(rng);
       fr += H.spacing * (2 / Math.PI) * Math.sqrt(g1 * g1 + g2 * g2) * 1.0;
@@ -114,23 +174,40 @@ class Body {
       th.push(gaussFrom(rng) * H.angSd * Math.PI / 180);
       // radiation efficiency of plate modes rises with frequency (toward coincidence)
       rad.push((rng() < 0.5 ? -1 : 1) * (0.8 + 0.4 * rng()) * Math.pow(fr / 500, H.radTilt ?? 0.35));
+      // where the mode mostly lives: back plate for some, otherwise one region of the top
+      const back = rng() < 0.3;
+      pb.push(back ? 0.6 + 0.4 * rng() : 0.25 * rng());
+      region.push(back ? REG_BACK : 1 + Math.floor(rng() * 5));
     }
     const n = f.length;
-    this.n = n;
+    // construction (woods, bracing, finish) and the player's contact reshape every mode by its top/back share
+    for (let i = 0; i < n; i++) {
+      const p = pb[i], hf = Math.min(1, Math.max(0, (f[i] - 400) / 3000));
+      f[i] *= Math.pow(K.top.f, 1 - p) * Math.pow(K.back.f, p) * (i < nLow ? K.lowF : 1);
+      m[i] *= Math.pow(K.top.m, 1 - p) * Math.pow(K.back.m, p);
+      // loss factors add: 1/Q = 1/Q0 + extra losses from wood, finish and contact
+      let invQ = 1 / Q[i] + (1 - p) * K.top.dq + p * K.back.dq + K.finishDq * (0.5 + hf)
+        + (K.hold.back * p + K.hold.top * (1 - p)) * (i < nLow ? 1 : 1 - 0.5 * hf);
+      Q[i] = 1 / Math.max(1 / 400, invQ);
+      f[i] *= 1 + K.hold.fshift * p;
+      rad[i] *= Math.pow(K.top.rad, 1 - p) * Math.pow(K.back.rad, p);
+    }
+    this.n = n; this.nLow = nLow;
     this.f = Float64Array.from(f); this.Q = Float64Array.from(Q); this.m = Float64Array.from(m);
     this.cz = Float64Array.from(th.map(Math.cos)); this.sy = Float64Array.from(th.map(Math.sin));
-    // radiation bank: every mode below 1.5 kHz, then every second one (radiation is smooth up there)
-    // keep every mode below 1.5 kHz, every 2nd to 4 kHz, every 4th above (each kept mode stands in for the skipped)
+    this.K = K;
+    // radiating bank: every mode below 1.5 kHz, every 2nd to 4 kHz, every 4th above (each stands in for the skipped)
     const keep = [], stride = [];
     for (let i = 0; i < n; i++) {
       const st = this.f[i] < 1500 ? 1 : this.f[i] < 4000 ? (eco ? 3 : 2) : (eco ? 8 : 4);
-      if (i % st === 0) { keep.push(i); stride.push(st); }
+      if (i < nLow || (i - nLow) % st === 0) { keep.push(i); stride.push(i < nLow ? 1 : st); }
     }
     const nr = keep.length;
     this.nr = nr;
     this.b0 = new Float64Array(nr); this.a1 = new Float64Array(nr); this.a2 = new Float64Array(nr);
-    this.gL = new Float64Array(nr); this.gR = new Float64Array(nr); this.gzy = new Float64Array(nr);
     this.z1 = new Float64Array(nr); this.z2 = new Float64Array(nr);
+    this.lowW = new Float64Array(nLow * NREG);      // region weights of the low modes
+    this.hw = new Float64Array(nr); this.hreg = new Int32Array(nr);
     for (let q = 0; q < nr; q++) {
       const i = keep[q];
       const w = TAU * Math.min(this.f[i], sr * 0.45) / sr;
@@ -138,19 +215,14 @@ class Body {
       this.b0[q] = al / a0; this.a1[q] = -2 * Math.cos(w) / a0; this.a2[q] = (1 - al) / a0;
       // normalized bandpass -> modal velocity per unit generalized force: x Q/(m w)
       const vel = this.Q[i] / (this.m[i] * TAU * this.f[i]) * Math.sqrt(stride[q]) * (stride[q] > 1 ? 1.2 : 1);
-      // radiated pressure follows the normal bridge velocity (Woodhouse), weighted by how well the mode radiates;
-      // two mic positions see each mode with a different weight
       const r = rad[i] * this.cz[i] * vel;
-      const sp = i < spec.modes.length ? (rad[i] > 0.6 ? 0.12 : 0.6) : 0.8;
-      this.gL[q] = r * (1 + sp * (rng() - 0.5)) * (i >= spec.modes.length && rng() < 0.3 ? -1 : 1);
-      this.gR[q] = r * (1 + sp * (rng() - 0.5)) * (i >= spec.modes.length && rng() < 0.3 ? -1 : 1);
-      this.gzy[q] = 0; // filled per sample from force direction
-      this._idx = keep;
+      if (i < nLow) for (let k = 0; k < NREG; k++) this.lowW[i * NREG + k] = r * pat[i][k] * 1.6;
+      else { this.hw[q] = r; this.hreg[q] = region[i - nLow]; }
     }
     // force projection per radiating mode: generalized force = Fz cos(th) + Fy sin(th)
     this.pz = new Float64Array(nr); this.py = new Float64Array(nr);
     for (let q = 0; q < nr; q++) { this.pz[q] = this.cz[keep[q]]; this.py[q] = this.sy[keep[q]]; }
-    // first-order radiation highpass (Woodhouse: R = (i w/wc)/(1 + i w/wc))
+    // first-order radiation highpass (Woodhouse: R = (i w/wc)/(1 + i w/wc)), applied per region
     this.radC = Math.exp(-TAU * (spec.radFc || 250) / sr);
     this.xz1 = 0; this.xz2 = 0; this.xy1 = 0; this.xy2 = 0;
   }
@@ -226,7 +298,9 @@ class GuitarEngine {
     this.queue = [];
     this.params = {
       preset: 'dreadnought', tuning: STD.slice(), capo: 0, brightness: 0.55, body: 1.0, bodySize: 1.0,
-      sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high'
+      sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high',
+      build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated' },
+      scene: { mics: 'fret12', hold: 'seated' }
     };
     this.bend = 0; this.bendTarget = 0;
     this.RING = 16384; this.RMASK = this.RING - 1;
@@ -241,6 +315,11 @@ class GuitarEngine {
     this.rh = new Float64Array(8);
     this.cplLP = 0; this.cplHP = 0; this.lastF = 0;
     this.cplRing = new Float64Array(128); this.U = new Float64Array(64);
+    this.RL = 2048; this.regRing = new Float64Array(7 * this.RL); this.regW = 0;
+    this.regS = new Float64Array(7); this.regHP = new Float64Array(7); this.regX = new Float64Array(7);
+    this.mD = new Float64Array(14); this.mG = new Float64Array(14); this.mN = new Float64Array(14); this.mS = new Float64Array(14);
+    this.mC = new Float64Array(14); this.mI = new Float64Array(14); this.mLP = new Float64Array(14); this.nm = 1;
+    this.rhF = new Float64Array(8); this.feedF = 0; this.feedB = 0; this.sceneDirty = true;
     this.FY = []; this.FZ = []; for (let j = 0; j < 6; j++) { this.FY.push(new Float64Array(64)); this.FZ.push(new Float64Array(64)); }
     this.setPreset('dreadnought');
   }
@@ -249,7 +328,8 @@ class GuitarEngine {
   setParams(p) {
     let rebuild = false, retune = false;
     for (const k in p) {
-      if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality') rebuild = true;
+      if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality' || k === 'build') rebuild = true;
+      if (k === 'scene') this.sceneDirty = true;
       if (k === 'tuning' || k === 'capo' || k === 'brightness') retune = true;
       this.params[k] = p[k];
     }
@@ -262,7 +342,7 @@ class GuitarEngine {
     const ov = this.params.override || {};
     this.P = Object.assign({}, base, ov, { body: Object.assign({}, base.body, ov.body || {}), damp: Object.assign({}, base.damp, ov.damp || {}) });
     if (ov.body && ov.body.hf) this.P.body.hf = Object.assign({}, base.body.hf, ov.body.hf);
-    this.body = new Body(this.P.body, this.sr, 1 / Math.max(0.7, Math.min(1.4, this.params.bodySize)), this.params.quality === 'eco');
+    this.body = new Body(this.P.body, this.sr, 1 / Math.max(0.7, Math.min(1.4, this.params.bodySize)), this.params.quality === 'eco', this.params.build);
     const sr = this.sr;
     { const w = TAU * this.P.radHP / sr, q = 0.75, al = Math.sin(w) / (2 * q), a0 = 1 + al, cw = Math.cos(w);
       this.rhb0 = (1 + cw) / 2 / a0; this.rhb1 = -(1 + cw) / a0; this.rhb2 = this.rhb0; this.rha1 = -2 * cw / a0; this.rha2 = (1 - al) / a0; }
@@ -646,7 +726,8 @@ class GuitarEngine {
   }
 
   // ---------- render ----------
-  render(outL, outR, n, offset = 0) {
+  render(outL, outR, n, offset = 0, outF = null, outB = null) {
+    if (this.sceneDirty) this.setupScene();
     let done = 0;
     while (done < n) {
       while (this.queue.length && this.queue[0]._at <= this.clock) this.handle(this.queue.shift());
@@ -655,13 +736,13 @@ class GuitarEngine {
       // control-rate work every 64 samples
       const toCtl = 64 - (this.clock & 63);
       seg = Math.min(seg, toCtl);
-      this.renderSeg(outL, outR, offset + done, seg);
+      this.renderSeg(outL, outR, offset + done, seg, outF, outB);
       done += seg;
       if ((this.clock & 63) === 0) this.control();
     }
   }
 
-  renderSeg(outL, outR, off, n) {
+  renderSeg(outL, outR, off, n, outF, outB) {
     const S = this.strings, B = this.body, nb = B.nr;
     const b0 = B.b0, a1 = B.a1, a2 = B.a2, gL = B.gL, gR = B.gR, z1 = B.z1, z2 = B.z2, pz = B.pz, py = B.py;
     const gy = 0.3, bodyAmt = this.params.body, gain = this.params.gain * this.P.out;
@@ -730,19 +811,45 @@ class GuitarEngine {
       const inZ = Fz + this.staticZ + this.bodyIn[tIdx], inY = Fy + this.staticY; this.bodyIn[tIdx] = 0;
       const dz = inZ - B.xz2; B.xz2 = B.xz1; B.xz1 = inZ;
       const dy = inY - B.xy2; B.xy2 = B.xy1; B.xy1 = inY;
-      let L = 0, R = 0;
+      // modal velocities -> volume velocity of each radiating region
+      const RS = this.regS; RS.fill(0);
+      const nLow = B.nLow, lowW = B.lowW, hw = B.hw, hreg = B.hreg;
       for (let q = 0; q < nb; q++) {
         const y = b0[q] * (pz[q] * dz + py[q] * dy) - a1[q] * z1[q] - a2[q] * z2[q];
         z2[q] = z1[q]; z1[q] = y;
-        L += gL[q] * y; R += gR[q] * y;
+        if (q < nLow) { const o = q * 7; for (let k = 0; k < 7; k++) RS[k] += lowW[o + k] * y; }
+        else RS[hreg[q]] += hw[q] * y;
       }
-      // radiation: first-order highpass of the bridge velocity (Woodhouse's single radiation filter)
-      const rc = B.radC;
-      const hl = rc * (this.radL + L - this.radXL); this.radXL = L; this.radL = hl;
-      const hr = rc * (this.radR + R - this.radXR); this.radXR = R; this.radR = hr;
-      L = hl * bodyAmt; R = hr * bodyAmt;
-      const mid = 0.5 * (L + R), side = 0.5 * (L - R) * width;
-      L = mid + side; R = mid - side;
+      // each region radiates through Woodhouse's first-order highpass; keep its history for the mic delays
+      const rc = B.radC, RL = this.RL, wpos = this.regW;
+      let front = 0, back = 0;
+      for (let k = 0; k < 7; k++) {
+        const x = RS[k] * bodyAmt;
+        const h = rc * (this.regHP[k] + x - this.regX[k]); this.regX[k] = x; this.regHP[k] = h;
+        this.regRing[k * RL + wpos] = h;
+        if (k === 6) back = h; else front += h;
+      }
+      // direct sound at each mic: every region at its own delay and gain, near-field gradient term for directional
+      // mics (proximity effect), and a diffraction lowpass when the region faces away (body / head shadow)
+      let L = 0, R = 0;
+      const nm = this.nm, mD = this.mD, mG = this.mG, mN = this.mN, mS = this.mS, mI = this.mI, mLP = this.mLP, mC = this.mC;
+      for (let m = 0; m < nm; m++) {
+        let acc = 0;
+        for (let k = 0; k < 7; k++) {
+          const j = m * 7 + k;
+          let pos = wpos - mD[j]; if (pos < 0) pos += RL;
+          const i0 = pos | 0, fr = pos - i0, i1 = i0 + 1 === RL ? 0 : i0 + 1;
+          const x = this.regRing[k * RL + i0] * (1 - fr) + this.regRing[k * RL + i1] * fr;
+          mI[j] = mI[j] * 0.9993 + x / sr;
+          const y = mG[j] * x + mN[j] * mI[j];
+          mLP[j] += (y - mLP[j]) * mC[j];
+          acc += y + (mLP[j] - y) * mS[j];
+        }
+        if (m === 0) L = acc; else R = acc;
+      }
+      if (nm === 1) R = L;
+      this.regW = wpos + 1 === RL ? 0 : wpos + 1;
+      this.feedF = front; this.feedB = back;
       { const r = this.rh;
         const yl = this.rhb0 * L + this.rhb1 * r[0] + this.rhb2 * r[1] - this.rha1 * r[2] - this.rha2 * r[3];
         r[1] = r[0]; r[0] = L; r[3] = r[2]; r[2] = yl; L = yl;
@@ -757,13 +864,43 @@ class GuitarEngine {
       let oL = yL * gain, oR = yR * gain;
       if (!(oL === oL) || !(oR === oR)) { this.panicReset(); oL = oR = 0; }
       outL[off + i] = oL; outR[off + i] = oR;
+      if (outF) {
+        // room feeds: top-side and back-side radiation (source strength at 1 m), same sub-A0 rolloff
+        const r = this.rhF; let F = this.feedF, Bk = this.feedB;
+        const yf = this.rhb0 * F + this.rhb1 * r[0] + this.rhb2 * r[1] - this.rha1 * r[2] - this.rha2 * r[3];
+        r[1] = r[0]; r[0] = F; r[3] = r[2]; r[2] = yf;
+        const yb = this.rhb0 * Bk + this.rhb1 * r[4] + this.rhb2 * r[5] - this.rha1 * r[6] - this.rha2 * r[7];
+        r[5] = r[4]; r[4] = Bk; r[7] = r[6]; r[6] = yb;
+        outF[off + i] = yf * gain; outB[off + i] = yb * gain;
+      }
     }
     this.clock += n;
+  }
+
+  // Direct-path coefficients for the current mics, from the scene (AcousticSpace when present)
+  setupScene() {
+    this.sceneDirty = false;
+    const sc = Object.assign({}, this.params.scene || {}, { hold: (this.params.build || {}).hold || 'seated' });
+    const S = root.AcousticSpace;
+    const coefs = S ? S.directCoefs(sc, this.sr)
+      : [[0.17, 0.20, 0.25, 0.25, 0.3, 0.2, 0.3].map((d, k) => ({ delay: d / 343 * this.sr, gP: 1 / d, gB: 0, gNear: 0, shadow: k === 6 ? 0.8 : 0 }))];
+    this.nm = Math.min(2, coefs.length);
+    const ears = S && S.expandMics(sc.mics || 'fret12').some(m => m.ear);
+    const norm = S ? S.micNorm(sc) : 1;
+    for (let m = 0; m < this.nm; m++) for (let k = 0; k < 7; k++) {
+      const c = coefs[m][k], j = m * 7 + k;
+      this.mD[j] = Math.min(this.RL - 4, Math.max(1, c.delay));
+      this.mG[j] = (c.gP + c.gB) * norm * 2.0;      // norm: preamp gain for this setup's distance
+      this.mN[j] = c.gNear * norm * 2.0;
+      this.mS[j] = c.shadow;
+      this.mC[j] = 1 - Math.exp(-TAU * (ears ? 1400 : 380) / this.sr);
+    }
   }
 
   panicReset() {
     for (const s of this.strings) for (const v of s.voices) { v.y1.fill(0); v.y2.fill(0); v.nact = 0; }
     this.body.reset(); this.staticZ = this.staticY = 0; this.radL = this.radR = this.radXL = this.radXR = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
+    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0);
   }
 
   meters() {
@@ -773,6 +910,8 @@ class GuitarEngine {
 
 root.GuitarEngine = GuitarEngine;
 root.GUITAR_PRESETS = PRESETS;
+root.GUITAR_WOODS = WOODS;
+root.GUITAR_HOLDS = HOLDS;
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {
   class GuitarProcessor extends AudioWorkletProcessor {
@@ -785,7 +924,7 @@ if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 
     process(inputs, outputs) {
       const out = outputs[0], L = out[0], R = out[1] || out[0];
       if (this.eng.clock === 0) this.eng.clock = Math.round(currentTime * sampleRate);
-      this.eng.render(L, R, L.length, 0);
+      this.eng.render(L, R, L.length, 0, out[2] || null, out[3] || null);
       if (++this.meterCount >= 12) { this.meterCount = 0; this.port.postMessage({ meters: this.eng.meters() }); }
       return true;
     }

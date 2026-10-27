@@ -131,6 +131,8 @@ select { background: var(--panel-2); border: 1px solid var(--line); border-radiu
 .rec-out { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .rec-out audio { max-width: 100%; height: 34px; }
 .rec-out a { color: var(--accent); }
+#roomMap { width: 100%; height: 230px; display: block; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); touch-action: none; cursor: grab; }
+.space-group { grid-column: span 1; }
 .science { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .science p { margin: 0 0 8px; max-width: 72ch; }
 .science b { color: var(--fg); font-weight: 600; }
@@ -230,9 +232,28 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <div class="row"><label for="bodysize">Body size</label><input id="bodysize" type="range" min="80" max="125" value="100"><output id="bodysizeOut">100%</output></div>
       <div class="row"><label for="symp">Sympathetic</label><input id="symp" type="range" min="0" max="100" value="50"><output id="sympOut">50</output></div>
       <div class="row"><label for="noise">Finger noise</label><input id="noise" type="range" min="0" max="100" value="50"><output id="noiseOut">50</output></div>
-      <div class="row"><label for="width">Mic width</label><input id="width" type="range" min="0" max="100" value="70"><output id="widthOut">70</output></div>
-      <div class="row"><label for="room">Room</label><input id="room" type="range" min="0" max="100" value="22"><output id="roomOut">22</output></div>
+      <div class="row wide"><label for="topWood">Top</label><select id="topWood"></select></div>
+      <div class="row wide"><label for="backWood">Back &amp; sides</label><select id="backWood"></select></div>
+      <div class="row wide"><label for="bracing">Bracing</label>
+        <select id="bracing"><option value="standard">Standard X</option><option value="scalloped">Scalloped X</option><option value="forward">Forward-shifted X</option></select></div>
+      <div class="row wide"><label for="finish">Finish</label>
+        <select id="finish"><option value="nitro">Thin nitrocellulose</option><option value="poly">Thick polyurethane</option><option value="none">Unfinished</option></select></div>
+      <div class="row wide"><label for="hold">Holding</label><select id="hold"></select></div>
       <div class="row"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="75"><output id="volOut">75</output></div>
+    </div>
+
+    <div class="group space-group">
+      <h2>Mics &amp; room</h2>
+      <p class="hint">Drag the guitar around the room. Every reflection is traced from the walls to the mics.</p>
+      <canvas id="roomMap" aria-label="Room map: drag the guitar"></canvas>
+      <div class="note" id="roomInfo">&nbsp;</div>
+      <div class="row wide"><label for="micSetup">Mics</label><select id="micSetup"></select></div>
+      <div class="row wide"><label for="micPattern">Pattern</label>
+        <select id="micPattern"><option value="default">As set up</option><option value="omni">Omni</option><option value="cardioid">Cardioid</option><option value="supercardioid">Supercardioid</option><option value="fig8">Figure-8</option></select></div>
+      <div class="row"><label for="micDist">Mic distance</label><input id="micDist" type="range" min="40" max="400" value="100"><output id="micDistOut">x1.0</output></div>
+      <div class="row wide"><label for="roomSel">Room</label><select id="roomSel"></select></div>
+      <div class="row"><label for="roomTrim">Room level</label><input id="roomTrim" type="range" min="-24" max="12" value="0"><output id="roomTrimOut">as heard</output></div>
+      <div class="toggles"><button class="btn" id="turnGuitar" type="button">Turn guitar 45°</button></div>
     </div>
 
     <div class="group">
@@ -256,7 +277,430 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
   </section>
 </div>
 
-<script id="dsp-src">// Acoustic — coupled string/body modal guitar engine.
+<script id="dsp-src">// Acoustic — the space around the guitar: where it sits, how it is held, the microphones, and the room.
+//
+// The guitar radiates from several regions (soundhole, bridge, lower bout bass/treble, tail, upper bout, back).
+// For the DIRECT sound, every region reaches every mic at its own distance and angle: the worklet applies the
+// per-region delays and gains computed here (spherical spreading, mic polar pattern, the proximity effect of
+// pressure-gradient mics, shadowing by the body and by the player's head).
+// For the ROOM, an image-source model traces wall reflections with per-band absorption, source directivity in the
+// direction each ray leaves the guitar and mic directivity in the direction it arrives; a statistical late tail
+// follows the Eyring decay of each band, at the energy level room acoustics predicts (energy arrival rate 4 pi c / V
+// relative to a direct sound of amplitude 1/d). Both are baked into impulse responses for ConvolverNodes, one per
+// source side (top / back), so the guitar's front and back radiate into the room separately.
+
+(function (root) {
+'use strict';
+const C = 343;               // speed of sound, m/s
+const BANDS = [125, 250, 500, 1000, 2000, 4000, 8000];
+
+// ---------------- materials: absorption per octave band 125..8k (8k extrapolated where not tabulated) ----------------
+const MATERIALS = {
+  concrete:   { name: 'Painted concrete', a: [0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.03] },
+  brick:      { name: 'Brick', a: [0.03, 0.03, 0.03, 0.04, 0.05, 0.07, 0.08] },
+  stone:      { name: 'Stone', a: [0.02, 0.02, 0.03, 0.04, 0.05, 0.05, 0.06] },
+  plaster:    { name: 'Plaster / drywall', a: [0.29, 0.10, 0.05, 0.04, 0.07, 0.09, 0.10] },
+  woodFloor:  { name: 'Wood floor', a: [0.15, 0.11, 0.10, 0.07, 0.06, 0.07, 0.07] },
+  woodPanel:  { name: 'Wood paneling', a: [0.42, 0.21, 0.10, 0.08, 0.06, 0.06, 0.06] },
+  carpet:     { name: 'Carpet on concrete', a: [0.02, 0.06, 0.14, 0.37, 0.60, 0.65, 0.66] },
+  carpetPad:  { name: 'Carpet on pad', a: [0.08, 0.24, 0.57, 0.69, 0.71, 0.73, 0.74] },
+  curtain:    { name: 'Heavy curtains', a: [0.14, 0.35, 0.55, 0.72, 0.70, 0.65, 0.62] },
+  glass:      { name: 'Window glass', a: [0.35, 0.25, 0.18, 0.12, 0.07, 0.04, 0.03] },
+  tile:       { name: 'Ceramic tile', a: [0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.03] },
+  foam:       { name: 'Acoustic panels', a: [0.25, 0.65, 0.95, 1.00, 0.95, 0.90, 0.88] },
+  sofa:       { name: 'Upholstered furniture', a: [0.35, 0.45, 0.57, 0.61, 0.59, 0.55, 0.52] },
+  audience:   { name: 'Seated audience', a: [0.60, 0.74, 0.88, 0.96, 0.93, 0.85, 0.80] },
+  books:      { name: 'Bookshelves', a: [0.30, 0.35, 0.40, 0.45, 0.50, 0.50, 0.50] },
+  grass:      { name: 'Grass', a: [0.11, 0.26, 0.60, 0.69, 0.92, 0.99, 0.99] },
+  open:       { name: 'Open air', a: [1, 1, 1, 1, 1, 1, 1] }
+};
+// air absorption, energy attenuation coefficient m (1/m) at 20 C, 50% RH (ISO 9613-1)
+const AIR_M = [0.0001, 0.0003, 0.0006, 0.0011, 0.0024, 0.0072, 0.0245];
+
+// surfaces: floor, ceiling, x0 (left), x1 (right), y0 (front, behind the mics), y1 (back, behind the player)
+const ROOMS = {
+  booth:    { name: 'Dead booth', dims: [2.4, 2.0, 2.4], walls: { floor: 'carpetPad', ceiling: 'foam', x0: 'foam', x1: 'foam', y0: 'foam', y1: 'foam' }, extra: [], scatter: 0.4 },
+  living:   { name: 'Living room', dims: [5.6, 4.4, 2.6], walls: { floor: 'woodFloor', ceiling: 'plaster', x0: 'plaster', x1: 'glass', y0: 'plaster', y1: 'books' },
+              extra: [{ mat: 'carpet', area: 6, on: 'floor' }, { mat: 'sofa', area: 5, on: 'floor' }, { mat: 'curtain', area: 5, on: 'x1' }], scatter: 0.35 },
+  bedroom:  { name: 'Bedroom', dims: [4.0, 3.6, 2.5], walls: { floor: 'carpetPad', ceiling: 'plaster', x0: 'plaster', x1: 'plaster', y0: 'plaster', y1: 'glass' },
+              extra: [{ mat: 'sofa', area: 5, on: 'floor' }, { mat: 'curtain', area: 3, on: 'y1' }], scatter: 0.35 },
+  bathroom: { name: 'Tiled bathroom', dims: [2.6, 2.2, 2.4], walls: { floor: 'tile', ceiling: 'plaster', x0: 'tile', x1: 'tile', y0: 'tile', y1: 'glass' }, extra: [], scatter: 0.15 },
+  studio:   { name: 'Studio live room', dims: [8.0, 6.0, 3.4], walls: { floor: 'woodFloor', ceiling: 'foam', x0: 'woodPanel', x1: 'woodPanel', y0: 'curtain', y1: 'woodPanel' }, extra: [], scatter: 0.5 },
+  recital:  { name: 'Wooden recital hall', dims: [22, 14, 8], walls: { floor: 'woodFloor', ceiling: 'woodPanel', x0: 'woodPanel', x1: 'woodPanel', y0: 'plaster', y1: 'woodPanel' },
+              extra: [{ mat: 'audience', area: 90, on: 'floor' }], scatter: 0.5 },
+  hall:     { name: 'Concert hall', dims: [38, 23, 18], walls: { floor: 'woodFloor', ceiling: 'plaster', x0: 'plaster', x1: 'plaster', y0: 'woodPanel', y1: 'plaster' },
+              extra: [{ mat: 'audience', area: 560, on: 'floor' }], scatter: 0.6 },
+  church:   { name: 'Stone church', dims: [42, 16, 18], walls: { floor: 'stone', ceiling: 'stone', x0: 'stone', x1: 'glass', y0: 'stone', y1: 'stone' },
+              extra: [{ mat: 'woodPanel', area: 120, on: 'floor' }], scatter: 0.45 },
+  outdoors: { name: 'Outdoors on grass', dims: [200, 200, 200], walls: { floor: 'grass', ceiling: 'open', x0: 'open', x1: 'open', y0: 'open', y1: 'open' }, extra: [], scatter: 0.2, open: true }
+};
+
+// ---------------- microphones ----------------
+// pattern: p(theta) = A + B cos(theta); B > 0 parts are pressure-gradient (proximity effect near the source)
+const PATTERNS = {
+  omni: { name: 'Omni', A: 1, B: 0, diffuse: 1 },
+  cardioid: { name: 'Cardioid', A: 0.5, B: 0.5, diffuse: 1 / 3 },
+  supercardioid: { name: 'Supercardioid', A: 0.37, B: 0.63, diffuse: 0.27 },
+  fig8: { name: 'Figure-8', A: 0, B: 1, diffuse: 1 / 3 }
+};
+
+// Guitar-local coordinates (metres): origin at the saddle on the top, x toward the neck along the strings,
+// y across the top toward the bass side, z out of the top (toward a listener in front).
+// Radiation regions: points with an outward normal and an area. The 12th fret sits at x = scale/2.
+const REGIONS = [
+  { id: 'hole',   name: 'Soundhole',          p: [0.17, 0.0, 0.0],   n: [0, 0, 1] },
+  { id: 'bridge', name: 'Bridge',             p: [0.0, 0.0, 0.0],    n: [0, 0, 1] },
+  { id: 'bass',   name: 'Lower bout, bass',   p: [-0.04, 0.12, 0.0], n: [0, 0, 1] },
+  { id: 'treb',   name: 'Lower bout, treble', p: [-0.04, -0.12, 0.0], n: [0, 0, 1] },
+  { id: 'tail',   name: 'Below the bridge',   p: [-0.13, 0.0, 0.0],  n: [0, 0, 1] },
+  { id: 'upper',  name: 'Upper bout',         p: [0.28, 0.0, 0.0],   n: [0, 0, 1] },
+  { id: 'back',   name: 'Back',               p: [0.04, 0.0, -0.11], n: [0, 0, -1] }
+];
+
+// Mic setups in guitar-local coordinates (aim points too). 'ears' = the player's own head.
+const MIC_SETUPS = {
+  hole15:   { name: 'Soundhole, 15 cm', mics: [{ p: [0.17, 0.02, 0.15], aim: [0.17, 0, 0], pattern: 'cardioid' }] },
+  fret12:   { name: '12th fret, 20 cm', mics: [{ p: [0.33, 0.02, 0.20], aim: [0.30, 0, 0], pattern: 'cardioid' }] },
+  bout:     { name: 'Lower bout, 25 cm', mics: [{ p: [-0.07, 0.12, 0.25], aim: [-0.04, 0.08, 0], pattern: 'cardioid' }] },
+  spaced:   { name: 'Spaced pair: 12th fret + lower bout', mics: [{ p: [0.33, 0.04, 0.22], aim: [0.30, 0, 0], pattern: 'cardioid' }, { p: [-0.08, 0.10, 0.28], aim: [-0.04, 0.06, 0], pattern: 'cardioid' }] },
+  xy40:     { name: 'XY pair, 40 cm', mics: 'xy', center: [0.20, 0.0, 0.40], aim: [0.17, 0, 0], pattern: 'cardioid', spread: 45 },
+  room2m:   { name: 'Room pair, 2 m', mics: [{ p: [0.10, -0.4, 2.0], aim: [0.1, 0, 0], pattern: 'omni' }, { p: [0.10, 0.4, 2.0], aim: [0.1, 0, 0], pattern: 'omni' }] },
+  ears:     { name: "Player's ears", mics: 'ears', head: [0.12, 0.40, 0.06] }
+};
+
+// ---------------- small vector helpers ----------------
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const scl = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const len = (a) => Math.sqrt(dot(a, a));
+const nrm = (a) => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+// ---------------- placement: guitar-local <-> room ----------------
+// The guitar faces +Y of the room (its top normal points toward the room's front wall y0 = 0? no: toward -Y),
+// its neck points toward -X (player's left for a right-handed player facing -Y), bass side up (+Z).
+function placement(scene) {
+  const g = scene.guitar; // { pos: [x,y,z] room coords of the saddle point, yaw: radians }
+  const cy = Math.cos(g.yaw || 0), sy = Math.sin(g.yaw || 0);
+  // local axes in room coords
+  const ex = [-cy, sy, 0];          // toward the neck
+  const ez = [-sy, -cy, 0];          // out of the top: faces the -Y side of the room
+  const ey = [0, 0, 1];              // bass side up
+  const toRoom = (p) => add(g.pos, add(add(scl(ex, p[0]), scl(ey, p[1])), scl(ez, p[2])));
+  const dirToRoom = (d) => add(add(scl(ex, d[0]), scl(ey, d[1])), scl(ez, d[2]));
+  const toLocalDir = (d) => [dot(d, ex), dot(d, ey), dot(d, ez)];
+  return { ex, ey, ez, toRoom, dirToRoom, toLocalDir };
+}
+
+// Expand a mic setup into concrete mics in guitar-local coords: [{p, axis, pattern, ear?}]
+function expandMics(setup, scale) {
+  const s = typeof setup === 'string' ? MIC_SETUPS[setup] : setup;
+  if (s.mics === 'xy') {
+    const c = s.center, ax = nrm(sub(s.aim, c)), half = (s.spread || 45) * Math.PI / 180;
+    // rotate the aim around the guitar's y axis (vertical in the room when held) by +-half
+    const rot = (v, a) => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+    return [{ p: c, axis: rot(ax, half), pattern: s.pattern }, { p: c, axis: rot(ax, -half), pattern: s.pattern }];
+  }
+  if (s.mics === 'ears') {
+    // head above the bass edge of the upper bout; ears 17.5 cm apart along the neck direction
+    const h = s.head;
+    return [
+      { p: [h[0] + 0.0875, h[1], h[2]], axis: [1, 0, 0], pattern: 'omni', ear: 'L', head: h },
+      { p: [h[0] - 0.0875, h[1], h[2]], axis: [-1, 0, 0], pattern: 'omni', ear: 'R', head: h }
+    ];
+  }
+  return s.mics.map(m => ({ p: m.p, axis: nrm(sub(m.aim, m.p)), pattern: m.pattern }));
+}
+
+// A concrete setup from a preset with an optional pattern override and distance scaling (mics move along their
+// line to the aim point; the player's head does not move).
+function scaledSetup(key, dist, pattern) {
+  const s = MIC_SETUPS[key] || MIC_SETUPS.fret12;
+  if (s.mics === 'ears') return s;
+  const d = dist || 1;
+  const pat = (m) => (pattern && pattern !== 'default') ? pattern : m;
+  if (s.mics === 'xy') {
+    const c = add(s.aim, scl(sub(s.center, s.aim), d));
+    return Object.assign({}, s, { center: c, pattern: pat(s.pattern) });
+  }
+  return { name: s.name, mics: s.mics.map(m => ({ p: add(m.aim, scl(sub(m.p, m.aim), d)), aim: m.aim, pattern: pat(m.pattern) })) };
+}
+
+// ---------------- guitar source directivity (for room reflections) ----------------
+// Front (top + soundhole) source: omnidirectional at low frequency, beaming forward as frequency rises; back source the
+// mirror image. When the guitar is held, the player's body absorbs much of what leaves backward.
+const BEAM = [0.0, 0.1, 0.35, 0.8, 1.3, 1.8, 2.3];
+function sourceGain(side, uLocal, band, held) {
+  const facing = side === 'front' ? uLocal[2] : -uLocal[2];
+  let g = Math.pow((1 + facing) / 2 + 0.02, BEAM[band]);
+  if (held) {
+    // rays leaving toward the player (local -z for the top side, behind the back) hit clothing and torso
+    const towardPlayer = -uLocal[2];
+    if (towardPlayer > 0) g *= 1 - towardPlayer * (0.25 + 0.1 * band) ;
+  }
+  return Math.max(0, g);
+}
+
+// mic sensitivity for a wave arriving from unit direction `from` (pointing from the mic toward the source)
+function micGain(mic, from, band) {
+  if (mic.ear) {
+    // spherical head (Brown & Duda): the far side is shadowed, more so at high frequencies
+    const side = mic.ear === 'L' ? 1 : -1;
+    const c = from[0] * side; // cos of angle to the ear axis (local x)
+    const shadow = [0.0, 0.1, 0.25, 0.45, 0.65, 0.8, 0.9][band];
+    return (1 - shadow) + shadow * (0.5 + 0.5 * c) * (c > 0 ? 1.25 : 1);
+  }
+  const P = PATTERNS[mic.pattern] || PATTERNS.omni;
+  return Math.abs(P.A + P.B * dot(mic.axis, from));
+}
+
+// ---------------- direct path coefficients for the worklet ----------------
+// For each mic and region: delay (samples), gain for the pressure term, gain for the near-field gradient term
+// (pressure-gradient mics: p_grad = B cos(theta) (p + (c/d) * velocity_integral)), and a shadow amount (0 = clear line
+// of sight, 1 = region faces away from the mic: heard only by diffraction, low-passed).
+function directCoefs(scene, sr) {
+  const mics = expandMics(scene.mics, scene.scale || 0.645);
+  const held = scene.hold !== 'stand';
+  return mics.map(mic => REGIONS.map(r => {
+    const v = sub(mic.p, r.p), d = Math.max(0.05, len(v)), u = scl(v, 1 / d);
+    const facing = dot(u, r.n);                    // >0: mic in front of this region's surface
+    const from = scl(u, -1);
+    const P = PATTERNS[mic.pattern] || PATTERNS.omni;
+    let A = P.A, B = P.B * dot(mic.axis, from);
+    if (mic.ear) { A = 1; B = 0; }
+    // body shadow: smooth step from facing (0) to facing away (1)
+    let shadow = Math.min(1, Math.max(0, 0.5 - facing * 1.6));
+    // the player's body sits behind the back: back radiation reaching the front is further absorbed
+    let g = 1 / d;
+    if (held && r.id === 'back') g *= 0.45;
+    // head shadow for the player's ears: far ear gets the head's diffraction lowpass
+    let earShadow = 0;
+    if (mic.ear) {
+      const side = mic.ear === 'L' ? 1 : -1;
+      const toSrc = nrm(sub(r.p, mic.head));
+      earShadow = Math.max(0, Math.min(1, 0.5 - toSrc[0] * side * 0.9));
+      shadow = Math.max(shadow, earShadow * 0.8);
+    }
+    return { delay: d / C * sr, gP: g * A, gB: g * B, gNear: g * B * C / d, shadow, d };
+  }));
+}
+
+// "Preamp gain": normalize each setup by its mics' mean distance to the guitar's regions, as an engineer would
+// set gain. Applied equally to direct sound and room, so the direct-to-reverberant balance stays physical.
+function micNorm(scene) {
+  const mics = expandMics(scene.mics);
+  let s = 0, n = 0;
+  for (const m of mics) for (const r of REGIONS) { if (r.id === 'back') continue; s += len(sub(m.p, r.p)); n++; }
+  return (s / n) / 0.3;
+}
+
+// ---------------- impulse responses ----------------
+function eyring(room) {
+  const [Lx, Ly, Lz] = room.dims;
+  const V = Lx * Ly * Lz;
+  const areas = { floor: Lx * Ly, ceiling: Lx * Ly, x0: Ly * Lz, x1: Ly * Lz, y0: Lx * Lz, y1: Lx * Lz };
+  const S = Object.values(areas).reduce((a, b) => a + b, 0);
+  const alpha = {}; // per surface per band, extras blended in by area
+  for (const k in areas) alpha[k] = MATERIALS[room.walls[k]].a.slice();
+  for (const e of room.extra || []) {
+    const f = Math.min(1, e.area / areas[e.on]);
+    for (let b = 0; b < 7; b++) alpha[e.on][b] = alpha[e.on][b] * (1 - f) + MATERIALS[e.mat].a[b] * f;
+  }
+  const rt = [], abar = [];
+  for (let b = 0; b < 7; b++) {
+    let A = 0; for (const k in areas) A += areas[k] * alpha[k][b];
+    const a = Math.min(0.999, A / S); abar.push(a);
+    rt.push(0.161 * V / (-S * Math.log(1 - a) + 4 * AIR_M[b] * V));
+  }
+  return { V, S, areas, alpha, rt, abar };
+}
+
+// radix-2 complex FFT (in place)
+function fft(re, im, inv) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const ang = (inv ? 2 : -2) * Math.PI / size, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += size) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < size / 2; k++) {
+        const a = i + k, b = a + size / 2;
+        const tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+      }
+    }
+  }
+  if (inv) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+}
+
+// interpolate 7 band gains (linear amplitude) onto FFT bin frequencies, in dB over log-frequency
+function bandCurve(g, nfft, sr, out) {
+  const lg = g.map(x => Math.log(Math.max(1e-6, x)));
+  for (let k = 0; k <= nfft / 2; k++) {
+    const f = Math.max(20, k * sr / nfft);
+    const x = Math.log2(f / 125);
+    let v;
+    if (x <= 0) v = lg[0]; else if (x >= 6) v = lg[6];
+    else { const i = Math.floor(x), t = x - i; v = lg[i] * (1 - t) + lg[i + 1] * t; }
+    out[k] = Math.exp(v);
+  }
+  return out;
+}
+
+// A short linear-phase FIR (centered) realising 7 band gains; cached by rounded gains
+const FIRN = 128;
+function bandFir(g, sr, cache) {
+  const key = g.map(x => Math.round(x * 400)).join(',');
+  if (cache && cache.has(key)) return cache.get(key);
+  const re = new Float64Array(FIRN), im = new Float64Array(FIRN), mag = new Float64Array(FIRN / 2 + 1);
+  bandCurve(g, FIRN, sr, mag);
+  for (let k = 0; k <= FIRN / 2; k++) { re[k] = mag[k]; if (k > 0 && k < FIRN / 2) re[FIRN - k] = mag[k]; }
+  fft(re, im, true);
+  const h = new Float32Array(FIRN);
+  for (let i = 0; i < FIRN; i++) {
+    const j = (i + FIRN / 2) % FIRN;                 // center the zero-phase response
+    const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * (i + 0.5) / FIRN);
+    h[i] = re[j] * w;
+  }
+  if (cache) cache.set(key, h);
+  return h;
+}
+
+function rng32(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+function gauss(r) { let u = 0; for (let i = 0; i < 6; i++) u += r(); return (u - 3) * 1.4142; }
+
+// Build stereo IRs (reflections + late tail, no direct sound) for the top ('front') and back source sides.
+// scene: { room (key or object), guitar: {pos, yaw}, mics (setup key or object), hold, scale }
+function buildIRs(scene, sr) {
+  const room = typeof scene.room === 'string' ? ROOMS[scene.room] : scene.room;
+  const E = eyring(room);
+  const [Lx, Ly, Lz] = room.dims;
+  const pl = placement(scene);
+  const mics = expandMics(scene.mics, scene.scale || 0.645).map(m => ({ ...m, room: pl.toRoom(m.p), roomAxis: pl.dirToRoom(m.axis) }));
+  const held = scene.hold !== 'stand';
+  const src = { front: pl.toRoom([0.12, 0, 0.0]), back: pl.toRoom([0.04, 0, -0.11]) };
+  const rtMax = Math.max(...E.rt);
+  const dur = room.open ? 0.25 : Math.min(6, Math.max(0.3, rtMax * 1.15));
+  const N = Math.ceil(dur * sr) + FIRN;
+  const tMix = room.open ? 0.25 : Math.min(0.12, Math.max(0.035, Math.sqrt(E.V) / 1000 * 1.6));
+  const scat = room.scatter ?? 0.4;
+  const beta = {}; for (const k in E.alpha) beta[k] = E.alpha[k].map(a => Math.sqrt(Math.max(0, 1 - a)));
+  const out = { front: [new Float32Array(N), new Float32Array(N)], back: [new Float32Array(N), new Float32Array(N)], rt: E.rt, V: E.V, tMix };
+  const cache = new Map();
+  const r = rng32(1234);
+  const maxOrder = room.open ? 1 : 40;
+  // ----- image sources (Allen & Berkley), specular part
+  for (const side of ['front', 'back']) {
+    const S = src[side];
+    for (let mi = 0; mi < Math.min(2, mics.length); mi++) {
+      const M = mics[mi], buf = out[side][mi];
+      const nmax = Math.ceil(tMix * C / Math.min(Lx, Ly, Lz)) + 1;
+      for (let nx = -nmax; nx <= nmax; nx++) for (let ny = -nmax; ny <= nmax; ny++) for (let nz = -nmax; nz <= nmax; nz++)
+      for (let px = 0; px < 2; px++) for (let py = 0; py < 2; py++) for (let pz = 0; pz < 2; pz++) {
+        if (nx === 0 && ny === 0 && nz === 0 && px === 0 && py === 0 && pz === 0) continue; // direct sound
+        const cnt = {
+          x0: Math.abs(nx - px), x1: Math.abs(nx), y0: Math.abs(ny - py), y1: Math.abs(ny), floor: Math.abs(nz - pz), ceiling: Math.abs(nz)
+        };
+        if (room.open && (cnt.x0 + cnt.x1 + cnt.y0 + cnt.y1 + cnt.ceiling > 0)) continue;
+        const order = cnt.x0 + cnt.x1 + cnt.y0 + cnt.y1 + cnt.floor + cnt.ceiling;
+        if (order > maxOrder) continue;
+        const I = [(1 - 2 * px) * S[0] + 2 * nx * Lx, (1 - 2 * py) * S[1] + 2 * ny * Ly, (1 - 2 * pz) * S[2] + 2 * nz * Lz];
+        // randomize higher-order images slightly (diffusion; avoids flutter from a perfect lattice)
+        if (order > 1) for (let a = 0; a < 3; a++) I[a] += (r() - 0.5) * 0.12 * Math.min(1, order / 4);
+        const v = sub(M.room, I), d = len(v), t = d / C;
+        if (t > tMix) continue;
+        const arrive = scl(v, -1 / d);                       // from mic toward the image
+        // departure direction at the real source: mirror the arrival back through the same reflections
+        const dep = [(px ? -1 : 1) * -arrive[0], (py ? -1 : 1) * -arrive[1], (pz ? -1 : 1) * -arrive[2]];
+        const depLocal = pl.toLocalDir(dep);
+        const arrLocal = pl.toLocalDir(arrive);
+        const micAx = M.axis;
+        const g = new Array(7);
+        const spec = Math.pow(1 - scat, order / 2);
+        for (let b = 0; b < 7; b++) {
+          let a = spec / d * Math.exp(-AIR_M[b] * d / 2);
+          for (const k in cnt) if (cnt[k]) a *= Math.pow(beta[k][b], cnt[k]);
+          a *= sourceGain(side, depLocal, b, held);
+          a *= micGain({ ...M, axis: micAx }, arrLocal, b);
+          g[b] = a;
+        }
+        if (Math.max(...g) < 1e-5) continue;
+        const h = bandFir(g.map(x => x / Math.max(1e-9, Math.max(...g))), sr, cache);
+        const amp = Math.max(...g);
+        const at = Math.round(t * sr);
+        for (let i = 0; i < FIRN; i++) { const k = at + i - FIRN / 2; if (k >= 0 && k < N) buf[k] += h[i] * amp; }
+      }
+    }
+  }
+  if (room.open) return out;
+  // ----- late tail: per-band noise with Eyring decay, energy arrival rate 4 pi c / V (relative to a 1/d direct sound),
+  // ramping in as scattering turns specular energy diffuse, and fully after the mixing time
+  const hop = 256, NF = 512;
+  const win = new Float64Array(NF); for (let i = 0; i < NF; i++) win[i] = Math.sin(Math.PI * (i + 0.5) / NF); // sqrt-hann pair
+  const nFrames = Math.ceil(N / hop);
+  const meanFree = 4 * E.V / E.S;
+  for (const side of ['front', 'back']) {
+    // fraction of the source's power going into this side's directions (diffuse-field weighting)
+    const sidePow = []; for (let b = 0; b < 7; b++) {
+      let s = 0, n = 0;
+      for (let k = 0; k < 64; k++) { const z = -1 + (k + 0.5) / 32; s += Math.pow(sourceGain(side, [0, 0, z], b, held), 2); n++; }
+      sidePow.push(s / n);
+    }
+    for (let mi = 0; mi < Math.min(2, mics.length); mi++) {
+      const M = mics[mi], buf = out[side][mi];
+      const P = M.ear ? { diffuse: 0.9 } : (PATTERNS[M.pattern] || PATTERNS.omni);
+      const rg = rng32(777 + mi * 31 + (side === 'back' ? 999 : 0));
+      const curve = new Float64Array(NF / 2 + 1), gains = new Array(7);
+      const re = new Float64Array(NF), im = new Float64Array(NF);
+      for (let fI = 0; fI < nFrames; fI++) {
+        const t = (fI * hop + NF / 2) / sr;
+        const nRef = C * t / meanFree;
+        const ramp = t >= tMix ? 1 : Math.max(0, 1 - Math.pow(1 - scat, nRef)) * 0.9 + 0.1 * Math.min(1, t / tMix) ** 2;
+        for (let b = 0; b < 7; b++) {
+          // energy per second 4 pi c / V * exp(-13.8 t / RT); per sample divide by sr
+          const e = 4 * Math.PI * C / E.V * Math.exp(-13.82 * t / E.rt[b]) * sidePow[b] * P.diffuse / sr;
+          gains[b] = Math.sqrt(e * ramp);
+        }
+        bandCurve(gains, NF, sr, curve);
+        for (let k = 0; k < NF; k++) { re[k] = gauss(rg); im[k] = 0; }
+        for (let k = 0; k < NF; k++) re[k] *= win[k];
+        fft(re, im, false);
+        for (let k = 0; k <= NF / 2; k++) {
+          const g = curve[k]; re[k] *= g; im[k] *= g;
+          if (k > 0 && k < NF / 2) { re[NF - k] *= g; im[NF - k] *= g; }
+        }
+        fft(re, im, true);
+        const o = fI * hop;
+        for (let i = 0; i < NF; i++) { const k = o + i; if (k < N) buf[k] += re[i] * win[i]; }
+      }
+    }
+  }
+  return out;
+}
+
+function buildIRsNormalized(scene, sr) {
+  const out = buildIRs(scene, sr), g = micNorm(scene);
+  for (const side of ['front', 'back']) for (const ch of out[side]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
+  // single-mic setups: the room is heard in stereo through a twin of the mic offset 30 cm (decorrelated)
+  if (expandMics(scene.mics).length === 1) {
+    const s2 = Object.assign({}, scene, { mics: { mics: expandMics(scene.mics).map(m => ({ p: [m.p[0] + 0.3, m.p[1], m.p[2]], aim: add(m.p, m.axis), pattern: m.pattern })) } });
+    const tw = buildIRs(s2, sr);
+    for (const side of ['front', 'back']) { out[side][1] = tw[side][0]; for (let i = 0; i < out[side][1].length; i++) out[side][1][i] *= g; }
+  }
+  out.norm = g;
+  return out;
+}
+
+root.AcousticSpace = { BANDS, MATERIALS, ROOMS, PATTERNS, REGIONS, MIC_SETUPS, AIR_M, expandMics, placement, directCoefs, buildIRs: buildIRsNormalized, buildIRsRaw: buildIRs, micNorm, scaledSetup, eyring, fft };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+// Acoustic — coupled string/body modal guitar engine.
 // Runs in an AudioWorklet, on the main thread (ScriptProcessor fallback), or in Node for offline tests.
 //
 // Each string is a sum of its transverse modes, two per partial (one per polarization). Nothing about a mode's
@@ -299,8 +743,10 @@ const PRESETS = {
       // f Hz, Q, effective mass kg normal to the top at the bridge, bridge-motion angle deg, radiation (1 monopole, small for dipoles)
       // Steel-string data: Russell (Hummingbird 103/188/203 Hz), Popp & Rossing (D-28: 102, 193-204 monopoles,
       // 376 dipole, 436 quadrupole); masses from mass-loading studies (Christensen; Iulius), Woodhouse 2004.
-      modes: [[100, 26, 0.6, 2, 0.4], [193, 32, 0.19, 6, 1.0], [204, 34, 0.24, -8, 0.9], [228, 40, 0.42, 14, 0.5],
-              [292, 34, 0.7, 28, 0.55], [376, 36, 0.6, 32, 0.5], [436, 36, 0.8, -30, 0.45]],
+      // + share of the mode's motion in the back (0 top .. 1 back) + radiation pattern over the body regions
+      modes: [[100, 26, 0.6, 2, 0.4, 0.3, 'A0'], [193, 32, 0.19, 6, 1.0, 0.15, 'T11a'], [204, 34, 0.24, -8, 0.9, 0.35, 'T11b'],
+              [228, 40, 0.42, 14, 0.5, 0.8, 'back'], [292, 34, 0.7, 28, 0.55, 0.2, 'xdip'], [376, 36, 0.6, 32, 0.5, 0.15, 'ldip'],
+              [436, 36, 0.8, -30, 0.45, 0.2, 'quad']],
       // above ~480 Hz: statistical modes (Woodhouse): Rayleigh spacing, uniform Q, log-normal masses
       hf: { f0: 480, f1: 9500, spacing: 38, qlo: 30, qhi: 80, mMed: 2.4, mSpread: 0.9, angSd: 30, seed: 3 },
       radFc: 250
@@ -318,8 +764,9 @@ const PRESETS = {
       { T: 96, mu: 0.572e-3, EI: 85e-6, wound: 0, etaF: 7e-5, etaBn: 0.7e-2, etaBu: 0.7e-2, etaA: 2.5, EA: 14600 }],
     damp: { fretted: 0.25 }, polDetune: 0.0016, airScale: 0.75, plainEtaF: 3.6e-4,
     body: {
-      modes: [[118, 22, 0.5, 2, 0.45], [214, 30, 0.17, 6, 1.0], [230, 32, 0.22, -8, 0.9], [262, 38, 0.38, 14, 0.5],
-              [330, 34, 0.6, 28, 0.55], [415, 36, 0.55, 32, 0.5], [480, 36, 0.7, -30, 0.45]],
+      modes: [[118, 22, 0.5, 2, 0.45, 0.3, 'A0'], [214, 30, 0.17, 6, 1.0, 0.15, 'T11a'], [230, 32, 0.22, -8, 0.9, 0.35, 'T11b'],
+              [262, 38, 0.38, 14, 0.5, 0.8, 'back'], [330, 34, 0.6, 28, 0.55, 0.2, 'xdip'], [415, 36, 0.55, 32, 0.5, 0.15, 'ldip'],
+              [480, 36, 0.7, -30, 0.45, 0.2, 'quad']],
       hf: { f0: 520, f1: 9500, spacing: 44, qlo: 30, qhi: 80, mMed: 2.2, mSpread: 0.9, angSd: 30, seed: 5 },
       radFc: 290
     },
@@ -337,8 +784,8 @@ const PRESETS = {
     damp: { fretted: 0.25 }, polDetune: 0.002, airScale: 0.6, plainEtaF: 0,
     body: {
       // Woodhouse 2004 classical guitar fit: 91 Hz Q25, 205 Hz Q47, 225 Hz Q59; masses from his admittance peaks
-      modes: [[91, 25, 0.6, 2, 0.45], [205, 45, 0.13, 6, 1.0], [225, 55, 0.38, -10, 0.8], [280, 25, 0.6, 30, 0.55],
-              [420, 40, 1.0, -28, 0.45]],
+      modes: [[91, 25, 0.6, 2, 0.45, 0.3, 'A0'], [205, 45, 0.13, 6, 1.0, 0.15, 'T11a'], [225, 55, 0.38, -10, 0.8, 0.7, 'back'],
+              [280, 25, 0.6, 30, 0.55, 0.2, 'xdip'], [420, 40, 1.0, -28, 0.45, 0.15, 'ldip']],
       hf: { f0: 470, f1: 8500, spacing: 38, qlo: 30, qhi: 80, mMed: 2.8, mSpread: 0.9, angSd: 30, seed: 7 },
       radFc: 250
     },
@@ -355,14 +802,71 @@ function gaussFrom(rng) { return (rng() + rng() + rng() + rng() - 2) * 1.2247; }
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 // ---------------- body ----------------
+// ---------------- construction & contact ----------------
+// Multipliers for top- and back-dominated modes: f (frequency), m (effective mass), dq (added loss 1/Q),
+// rad (radiation); finish adds loss rising with frequency; holding adds back/top loss and a small shift.
+const WOODS = {
+  top: {
+    sitka:     { name: 'Sitka spruce', f: 1, m: 1, dq: 0, rad: 1 },
+    adirondack:{ name: 'Adirondack spruce', f: 1.03, m: 1.0, dq: -0.002, rad: 1.05 },
+    engelmann: { name: 'Engelmann spruce', f: 0.97, m: 0.95, dq: 0.001, rad: 1.03 },
+    cedar:     { name: 'Western red cedar', f: 0.96, m: 0.93, dq: 0.004, rad: 1.06 },
+    redwood:   { name: 'Redwood', f: 0.97, m: 0.97, dq: 0.003, rad: 1.02 },
+    mahogany:  { name: 'Mahogany top', f: 0.92, m: 1.25, dq: 0.004, rad: 0.85 },
+    koa:       { name: 'Koa top', f: 0.95, m: 1.35, dq: 0.002, rad: 0.82 }
+  },
+  back: {
+    indian:    { name: 'Indian rosewood', f: 1, m: 1, dq: 0, rad: 1 },
+    brazilian: { name: 'Brazilian rosewood', f: 1.02, m: 1.02, dq: -0.003, rad: 1.02 },
+    mahogany:  { name: 'Mahogany', f: 0.95, m: 0.8, dq: 0.004, rad: 0.95 },
+    maple:     { name: 'Maple', f: 1.05, m: 0.9, dq: 0.007, rad: 0.92 },
+    koa:       { name: 'Koa', f: 1.0, m: 0.95, dq: 0.002, rad: 0.97 },
+    walnut:    { name: 'Walnut', f: 0.98, m: 0.88, dq: 0.004, rad: 0.95 },
+    sapele:    { name: 'Sapele', f: 0.98, m: 0.9, dq: 0.004, rad: 0.95 }
+  }
+};
+// Player contact (Le Carrou, Pate & Chomette 2019: damping always rises, frequencies move < 2-5%; Woodhouse 2004:
+// low-mode damping depends strongly on how the guitar is held, little above ~300 Hz). Back-dominated modes take the
+// most: torso against the back roughly halves their Q; A0 and T(1,1) gain ~20-30% damping.
+const HOLDS = {
+  stand:  { name: 'On a stand', back: 0, top: 0, fshift: 0 },
+  seated: { name: 'Held, seated', back: 0.03, top: 0.002, fshift: -0.012 },
+  firm:   { name: 'Hugged close', back: 0.05, top: 0.004, fshift: -0.02 }
+};
+function constructionFactors(b) {
+  const top = WOODS.top[b.top] || WOODS.top.sitka, back = WOODS.back[b.back] || WOODS.back.indian;
+  const hold = HOLDS[b.hold] || HOLDS.seated;
+  const finishDq = b.finish === 'poly' ? 0.004 : b.finish === 'none' ? -0.002 : 0;
+  const lowF = b.bracing === 'scalloped' ? 0.96 : b.bracing === 'forward' ? 0.97 : 1;
+  return { top, back, hold, finishDq, lowF };
+}
+
+// Region patterns of the low modes over [hole, bridge, bass, treble, tail, upper, back] (volume-velocity shares)
+const REGION_PATTERNS = {
+  A0:   [0.55, 0.10, 0.10, 0.10, 0.05, 0.02, 0.08],   // air pumping through the soundhole, top and back breathing in phase
+  T11a: [-0.25, 0.30, 0.25, 0.25, 0.15, 0.05, -0.10], // top monopole, soundhole air out of phase
+  T11b: [0.15, 0.30, 0.20, 0.20, 0.12, 0.03, -0.35],  // top monopole coupled to the back
+  back: [0.10, -0.08, -0.06, -0.06, -0.04, 0.0, 0.80], // back plate monopole
+  xdip: [0.0, 0.0, 0.45, -0.45, 0.0, 0.0, 0.05],       // cross dipole: bass vs treble halves
+  ldip: [-0.15, 0.20, 0.10, 0.10, 0.35, -0.30, 0.0],   // long dipole: below vs above the bridge
+  quad: [0.0, 0.0, 0.30, -0.30, -0.20, 0.20, 0.0]
+};
+const NREG = 7, REG_BACK = 6;
+
 class Body {
-  constructor(spec, sr, sizeScale, eco) {
+  constructor(spec, sr, sizeScale, eco, build) {
     const rng = makeRng(spec.hf.seed || 1);
-    const f = [], Q = [], m = [], th = [], rad = [];
-    for (const md of spec.modes) { f.push(md[0] * sizeScale); Q.push(md[1]); m.push(md[2]); th.push(md[3] * Math.PI / 180); rad.push(md[4]); }
+    const K = constructionFactors(build || {});
+    const f = [], Q = [], m = [], th = [], rad = [], pb = [], pat = [];
+    for (const md of spec.modes) {
+      f.push(md[0] * sizeScale); Q.push(md[1]); m.push(md[2]); th.push(md[3] * Math.PI / 180); rad.push(md[4]);
+      pb.push(md[5] ?? 0.2); pat.push(REGION_PATTERNS[md[6]] || REGION_PATTERNS.T11a);
+    }
+    const nLow = f.length;
     const H = spec.hf;
     // Rayleigh-distributed spacings with mean H.spacing (Woodhouse's statistical high-frequency body)
     let fr = H.f0;
+    const region = [];
     while (fr < H.f1) {
       const g1 = gaussFrom(rng), g2 = gaussFrom(rng);
       fr += H.spacing * (2 / Math.PI) * Math.sqrt(g1 * g1 + g2 * g2) * 1.0;
@@ -372,23 +876,40 @@ class Body {
       th.push(gaussFrom(rng) * H.angSd * Math.PI / 180);
       // radiation efficiency of plate modes rises with frequency (toward coincidence)
       rad.push((rng() < 0.5 ? -1 : 1) * (0.8 + 0.4 * rng()) * Math.pow(fr / 500, H.radTilt ?? 0.35));
+      // where the mode mostly lives: back plate for some, otherwise one region of the top
+      const back = rng() < 0.3;
+      pb.push(back ? 0.6 + 0.4 * rng() : 0.25 * rng());
+      region.push(back ? REG_BACK : 1 + Math.floor(rng() * 5));
     }
     const n = f.length;
-    this.n = n;
+    // construction (woods, bracing, finish) and the player's contact reshape every mode by its top/back share
+    for (let i = 0; i < n; i++) {
+      const p = pb[i], hf = Math.min(1, Math.max(0, (f[i] - 400) / 3000));
+      f[i] *= Math.pow(K.top.f, 1 - p) * Math.pow(K.back.f, p) * (i < nLow ? K.lowF : 1);
+      m[i] *= Math.pow(K.top.m, 1 - p) * Math.pow(K.back.m, p);
+      // loss factors add: 1/Q = 1/Q0 + extra losses from wood, finish and contact
+      let invQ = 1 / Q[i] + (1 - p) * K.top.dq + p * K.back.dq + K.finishDq * (0.5 + hf)
+        + (K.hold.back * p + K.hold.top * (1 - p)) * (i < nLow ? 1 : 1 - 0.5 * hf);
+      Q[i] = 1 / Math.max(1 / 400, invQ);
+      f[i] *= 1 + K.hold.fshift * p;
+      rad[i] *= Math.pow(K.top.rad, 1 - p) * Math.pow(K.back.rad, p);
+    }
+    this.n = n; this.nLow = nLow;
     this.f = Float64Array.from(f); this.Q = Float64Array.from(Q); this.m = Float64Array.from(m);
     this.cz = Float64Array.from(th.map(Math.cos)); this.sy = Float64Array.from(th.map(Math.sin));
-    // radiation bank: every mode below 1.5 kHz, then every second one (radiation is smooth up there)
-    // keep every mode below 1.5 kHz, every 2nd to 4 kHz, every 4th above (each kept mode stands in for the skipped)
+    this.K = K;
+    // radiating bank: every mode below 1.5 kHz, every 2nd to 4 kHz, every 4th above (each stands in for the skipped)
     const keep = [], stride = [];
     for (let i = 0; i < n; i++) {
       const st = this.f[i] < 1500 ? 1 : this.f[i] < 4000 ? (eco ? 3 : 2) : (eco ? 8 : 4);
-      if (i % st === 0) { keep.push(i); stride.push(st); }
+      if (i < nLow || (i - nLow) % st === 0) { keep.push(i); stride.push(i < nLow ? 1 : st); }
     }
     const nr = keep.length;
     this.nr = nr;
     this.b0 = new Float64Array(nr); this.a1 = new Float64Array(nr); this.a2 = new Float64Array(nr);
-    this.gL = new Float64Array(nr); this.gR = new Float64Array(nr); this.gzy = new Float64Array(nr);
     this.z1 = new Float64Array(nr); this.z2 = new Float64Array(nr);
+    this.lowW = new Float64Array(nLow * NREG);      // region weights of the low modes
+    this.hw = new Float64Array(nr); this.hreg = new Int32Array(nr);
     for (let q = 0; q < nr; q++) {
       const i = keep[q];
       const w = TAU * Math.min(this.f[i], sr * 0.45) / sr;
@@ -396,19 +917,14 @@ class Body {
       this.b0[q] = al / a0; this.a1[q] = -2 * Math.cos(w) / a0; this.a2[q] = (1 - al) / a0;
       // normalized bandpass -> modal velocity per unit generalized force: x Q/(m w)
       const vel = this.Q[i] / (this.m[i] * TAU * this.f[i]) * Math.sqrt(stride[q]) * (stride[q] > 1 ? 1.2 : 1);
-      // radiated pressure follows the normal bridge velocity (Woodhouse), weighted by how well the mode radiates;
-      // two mic positions see each mode with a different weight
       const r = rad[i] * this.cz[i] * vel;
-      const sp = i < spec.modes.length ? (rad[i] > 0.6 ? 0.12 : 0.6) : 0.8;
-      this.gL[q] = r * (1 + sp * (rng() - 0.5)) * (i >= spec.modes.length && rng() < 0.3 ? -1 : 1);
-      this.gR[q] = r * (1 + sp * (rng() - 0.5)) * (i >= spec.modes.length && rng() < 0.3 ? -1 : 1);
-      this.gzy[q] = 0; // filled per sample from force direction
-      this._idx = keep;
+      if (i < nLow) for (let k = 0; k < NREG; k++) this.lowW[i * NREG + k] = r * pat[i][k] * 1.6;
+      else { this.hw[q] = r; this.hreg[q] = region[i - nLow]; }
     }
     // force projection per radiating mode: generalized force = Fz cos(th) + Fy sin(th)
     this.pz = new Float64Array(nr); this.py = new Float64Array(nr);
     for (let q = 0; q < nr; q++) { this.pz[q] = this.cz[keep[q]]; this.py[q] = this.sy[keep[q]]; }
-    // first-order radiation highpass (Woodhouse: R = (i w/wc)/(1 + i w/wc))
+    // first-order radiation highpass (Woodhouse: R = (i w/wc)/(1 + i w/wc)), applied per region
     this.radC = Math.exp(-TAU * (spec.radFc || 250) / sr);
     this.xz1 = 0; this.xz2 = 0; this.xy1 = 0; this.xy2 = 0;
   }
@@ -484,7 +1000,9 @@ class GuitarEngine {
     this.queue = [];
     this.params = {
       preset: 'dreadnought', tuning: STD.slice(), capo: 0, brightness: 0.55, body: 1.0, bodySize: 1.0,
-      sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high'
+      sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high',
+      build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated' },
+      scene: { mics: 'fret12', hold: 'seated' }
     };
     this.bend = 0; this.bendTarget = 0;
     this.RING = 16384; this.RMASK = this.RING - 1;
@@ -499,6 +1017,11 @@ class GuitarEngine {
     this.rh = new Float64Array(8);
     this.cplLP = 0; this.cplHP = 0; this.lastF = 0;
     this.cplRing = new Float64Array(128); this.U = new Float64Array(64);
+    this.RL = 2048; this.regRing = new Float64Array(7 * this.RL); this.regW = 0;
+    this.regS = new Float64Array(7); this.regHP = new Float64Array(7); this.regX = new Float64Array(7);
+    this.mD = new Float64Array(14); this.mG = new Float64Array(14); this.mN = new Float64Array(14); this.mS = new Float64Array(14);
+    this.mC = new Float64Array(14); this.mI = new Float64Array(14); this.mLP = new Float64Array(14); this.nm = 1;
+    this.rhF = new Float64Array(8); this.feedF = 0; this.feedB = 0; this.sceneDirty = true;
     this.FY = []; this.FZ = []; for (let j = 0; j < 6; j++) { this.FY.push(new Float64Array(64)); this.FZ.push(new Float64Array(64)); }
     this.setPreset('dreadnought');
   }
@@ -507,7 +1030,8 @@ class GuitarEngine {
   setParams(p) {
     let rebuild = false, retune = false;
     for (const k in p) {
-      if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality') rebuild = true;
+      if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality' || k === 'build') rebuild = true;
+      if (k === 'scene') this.sceneDirty = true;
       if (k === 'tuning' || k === 'capo' || k === 'brightness') retune = true;
       this.params[k] = p[k];
     }
@@ -520,7 +1044,7 @@ class GuitarEngine {
     const ov = this.params.override || {};
     this.P = Object.assign({}, base, ov, { body: Object.assign({}, base.body, ov.body || {}), damp: Object.assign({}, base.damp, ov.damp || {}) });
     if (ov.body && ov.body.hf) this.P.body.hf = Object.assign({}, base.body.hf, ov.body.hf);
-    this.body = new Body(this.P.body, this.sr, 1 / Math.max(0.7, Math.min(1.4, this.params.bodySize)), this.params.quality === 'eco');
+    this.body = new Body(this.P.body, this.sr, 1 / Math.max(0.7, Math.min(1.4, this.params.bodySize)), this.params.quality === 'eco', this.params.build);
     const sr = this.sr;
     { const w = TAU * this.P.radHP / sr, q = 0.75, al = Math.sin(w) / (2 * q), a0 = 1 + al, cw = Math.cos(w);
       this.rhb0 = (1 + cw) / 2 / a0; this.rhb1 = -(1 + cw) / a0; this.rhb2 = this.rhb0; this.rha1 = -2 * cw / a0; this.rha2 = (1 - al) / a0; }
@@ -904,7 +1428,8 @@ class GuitarEngine {
   }
 
   // ---------- render ----------
-  render(outL, outR, n, offset = 0) {
+  render(outL, outR, n, offset = 0, outF = null, outB = null) {
+    if (this.sceneDirty) this.setupScene();
     let done = 0;
     while (done < n) {
       while (this.queue.length && this.queue[0]._at <= this.clock) this.handle(this.queue.shift());
@@ -913,13 +1438,13 @@ class GuitarEngine {
       // control-rate work every 64 samples
       const toCtl = 64 - (this.clock & 63);
       seg = Math.min(seg, toCtl);
-      this.renderSeg(outL, outR, offset + done, seg);
+      this.renderSeg(outL, outR, offset + done, seg, outF, outB);
       done += seg;
       if ((this.clock & 63) === 0) this.control();
     }
   }
 
-  renderSeg(outL, outR, off, n) {
+  renderSeg(outL, outR, off, n, outF, outB) {
     const S = this.strings, B = this.body, nb = B.nr;
     const b0 = B.b0, a1 = B.a1, a2 = B.a2, gL = B.gL, gR = B.gR, z1 = B.z1, z2 = B.z2, pz = B.pz, py = B.py;
     const gy = 0.3, bodyAmt = this.params.body, gain = this.params.gain * this.P.out;
@@ -988,19 +1513,45 @@ class GuitarEngine {
       const inZ = Fz + this.staticZ + this.bodyIn[tIdx], inY = Fy + this.staticY; this.bodyIn[tIdx] = 0;
       const dz = inZ - B.xz2; B.xz2 = B.xz1; B.xz1 = inZ;
       const dy = inY - B.xy2; B.xy2 = B.xy1; B.xy1 = inY;
-      let L = 0, R = 0;
+      // modal velocities -> volume velocity of each radiating region
+      const RS = this.regS; RS.fill(0);
+      const nLow = B.nLow, lowW = B.lowW, hw = B.hw, hreg = B.hreg;
       for (let q = 0; q < nb; q++) {
         const y = b0[q] * (pz[q] * dz + py[q] * dy) - a1[q] * z1[q] - a2[q] * z2[q];
         z2[q] = z1[q]; z1[q] = y;
-        L += gL[q] * y; R += gR[q] * y;
+        if (q < nLow) { const o = q * 7; for (let k = 0; k < 7; k++) RS[k] += lowW[o + k] * y; }
+        else RS[hreg[q]] += hw[q] * y;
       }
-      // radiation: first-order highpass of the bridge velocity (Woodhouse's single radiation filter)
-      const rc = B.radC;
-      const hl = rc * (this.radL + L - this.radXL); this.radXL = L; this.radL = hl;
-      const hr = rc * (this.radR + R - this.radXR); this.radXR = R; this.radR = hr;
-      L = hl * bodyAmt; R = hr * bodyAmt;
-      const mid = 0.5 * (L + R), side = 0.5 * (L - R) * width;
-      L = mid + side; R = mid - side;
+      // each region radiates through Woodhouse's first-order highpass; keep its history for the mic delays
+      const rc = B.radC, RL = this.RL, wpos = this.regW;
+      let front = 0, back = 0;
+      for (let k = 0; k < 7; k++) {
+        const x = RS[k] * bodyAmt;
+        const h = rc * (this.regHP[k] + x - this.regX[k]); this.regX[k] = x; this.regHP[k] = h;
+        this.regRing[k * RL + wpos] = h;
+        if (k === 6) back = h; else front += h;
+      }
+      // direct sound at each mic: every region at its own delay and gain, near-field gradient term for directional
+      // mics (proximity effect), and a diffraction lowpass when the region faces away (body / head shadow)
+      let L = 0, R = 0;
+      const nm = this.nm, mD = this.mD, mG = this.mG, mN = this.mN, mS = this.mS, mI = this.mI, mLP = this.mLP, mC = this.mC;
+      for (let m = 0; m < nm; m++) {
+        let acc = 0;
+        for (let k = 0; k < 7; k++) {
+          const j = m * 7 + k;
+          let pos = wpos - mD[j]; if (pos < 0) pos += RL;
+          const i0 = pos | 0, fr = pos - i0, i1 = i0 + 1 === RL ? 0 : i0 + 1;
+          const x = this.regRing[k * RL + i0] * (1 - fr) + this.regRing[k * RL + i1] * fr;
+          mI[j] = mI[j] * 0.9993 + x / sr;
+          const y = mG[j] * x + mN[j] * mI[j];
+          mLP[j] += (y - mLP[j]) * mC[j];
+          acc += y + (mLP[j] - y) * mS[j];
+        }
+        if (m === 0) L = acc; else R = acc;
+      }
+      if (nm === 1) R = L;
+      this.regW = wpos + 1 === RL ? 0 : wpos + 1;
+      this.feedF = front; this.feedB = back;
       { const r = this.rh;
         const yl = this.rhb0 * L + this.rhb1 * r[0] + this.rhb2 * r[1] - this.rha1 * r[2] - this.rha2 * r[3];
         r[1] = r[0]; r[0] = L; r[3] = r[2]; r[2] = yl; L = yl;
@@ -1015,13 +1566,43 @@ class GuitarEngine {
       let oL = yL * gain, oR = yR * gain;
       if (!(oL === oL) || !(oR === oR)) { this.panicReset(); oL = oR = 0; }
       outL[off + i] = oL; outR[off + i] = oR;
+      if (outF) {
+        // room feeds: top-side and back-side radiation (source strength at 1 m), same sub-A0 rolloff
+        const r = this.rhF; let F = this.feedF, Bk = this.feedB;
+        const yf = this.rhb0 * F + this.rhb1 * r[0] + this.rhb2 * r[1] - this.rha1 * r[2] - this.rha2 * r[3];
+        r[1] = r[0]; r[0] = F; r[3] = r[2]; r[2] = yf;
+        const yb = this.rhb0 * Bk + this.rhb1 * r[4] + this.rhb2 * r[5] - this.rha1 * r[6] - this.rha2 * r[7];
+        r[5] = r[4]; r[4] = Bk; r[7] = r[6]; r[6] = yb;
+        outF[off + i] = yf * gain; outB[off + i] = yb * gain;
+      }
     }
     this.clock += n;
+  }
+
+  // Direct-path coefficients for the current mics, from the scene (AcousticSpace when present)
+  setupScene() {
+    this.sceneDirty = false;
+    const sc = Object.assign({}, this.params.scene || {}, { hold: (this.params.build || {}).hold || 'seated' });
+    const S = root.AcousticSpace;
+    const coefs = S ? S.directCoefs(sc, this.sr)
+      : [[0.17, 0.20, 0.25, 0.25, 0.3, 0.2, 0.3].map((d, k) => ({ delay: d / 343 * this.sr, gP: 1 / d, gB: 0, gNear: 0, shadow: k === 6 ? 0.8 : 0 }))];
+    this.nm = Math.min(2, coefs.length);
+    const ears = S && S.expandMics(sc.mics || 'fret12').some(m => m.ear);
+    const norm = S ? S.micNorm(sc) : 1;
+    for (let m = 0; m < this.nm; m++) for (let k = 0; k < 7; k++) {
+      const c = coefs[m][k], j = m * 7 + k;
+      this.mD[j] = Math.min(this.RL - 4, Math.max(1, c.delay));
+      this.mG[j] = (c.gP + c.gB) * norm * 2.0;      // norm: preamp gain for this setup's distance
+      this.mN[j] = c.gNear * norm * 2.0;
+      this.mS[j] = c.shadow;
+      this.mC[j] = 1 - Math.exp(-TAU * (ears ? 1400 : 380) / this.sr);
+    }
   }
 
   panicReset() {
     for (const s of this.strings) for (const v of s.voices) { v.y1.fill(0); v.y2.fill(0); v.nact = 0; }
     this.body.reset(); this.staticZ = this.staticY = 0; this.radL = this.radR = this.radXL = this.radXR = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
+    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0);
   }
 
   meters() {
@@ -1031,6 +1612,8 @@ class GuitarEngine {
 
 root.GuitarEngine = GuitarEngine;
 root.GUITAR_PRESETS = PRESETS;
+root.GUITAR_WOODS = WOODS;
+root.GUITAR_HOLDS = HOLDS;
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {
   class GuitarProcessor extends AudioWorkletProcessor {
@@ -1043,7 +1626,7 @@ if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 
     process(inputs, outputs) {
       const out = outputs[0], L = out[0], R = out[1] || out[0];
       if (this.eng.clock === 0) this.eng.clock = Math.round(currentTime * sampleRate);
-      this.eng.render(L, R, L.length, 0);
+      this.eng.render(L, R, L.length, 0, out[2] || null, out[3] || null);
       if (++this.meterCount >= 12) { this.meterCount = 0; this.port.postMessage({ meters: this.eng.meters() }); }
       return true;
     }
@@ -1569,7 +2152,7 @@ root.STD_TUNING = STD;
 const $ = (id) => document.getElementById(id);
 const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 
-let ctx = null, node = null, fallback = null, master = null, wetGain = null, dryGain = null, convolver = null, recNode = null;
+let ctx = null, node = null, fallback = null, master = null, wetGain = null, dryGain = null, convF = null, convB = null, recNode = null;
 let meters = [0, 0, 0, 0, 0, 0].map(() => ({ e: 0, fret: 0, damp: 0, active: false }));
 let started = false;
 let tuning = [40, 45, 50, 55, 59, 64], capo = 0;
@@ -1614,7 +2197,8 @@ async function start() {
   ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
   master = ctx.createGain(); master.gain.value = 1;
   dryGain = ctx.createGain(); wetGain = ctx.createGain();
-  convolver = ctx.createConvolver(); convolver.buffer = makeRoom(ctx);
+  // the room: one convolver per source side (top / back), impulse responses from the image-source model
+  convF = ctx.createConvolver(); convB = ctx.createConvolver(); convF.normalize = false; convB.normalize = false;
   const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.value = -4; limiter.knee.value = 4; limiter.ratio.value = 12; limiter.attack.value = 0.001; limiter.release.value = 0.12;
   let src;
@@ -1622,7 +2206,7 @@ async function start() {
     const code = document.getElementById('dsp-src').textContent;
     const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
     await ctx.audioWorklet.addModule(url);
-    node = new AudioWorkletNode(ctx, 'acoustic-guitar', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    node = new AudioWorkletNode(ctx, 'acoustic-guitar', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [4] });
     node.port.onmessage = (m) => { if (m.data.meters) meters = m.data.meters; };
     src = node;
   } catch (err) {
@@ -1630,15 +2214,21 @@ async function start() {
     console.warn('AudioWorklet unavailable, using ScriptProcessor', err);
     fallback = new GuitarEngine(ctx.sampleRate);
     fallback.clock = Math.round(ctx.currentTime * ctx.sampleRate);
-    const sp = ctx.createScriptProcessor(512, 0, 2);
+    const sp = ctx.createScriptProcessor(512, 0, 4);
     sp.onaudioprocess = (e) => {
-      const L = e.outputBuffer.getChannelData(0), R = e.outputBuffer.getChannelData(1);
-      fallback.render(L, R, L.length, 0);
+      const ob = e.outputBuffer, L = ob.getChannelData(0), R = ob.getChannelData(1);
+      fallback.render(L, R, L.length, 0, ob.numberOfChannels > 2 ? ob.getChannelData(2) : null, ob.numberOfChannels > 3 ? ob.getChannelData(3) : null);
       meters = fallback.meters();
     };
     src = sp;
   }
-  src.connect(dryGain); src.connect(convolver); convolver.connect(wetGain);
+  // channels: 0/1 direct sound at the mics, 2 top-side feed, 3 back-side feed
+  const split = ctx.createChannelSplitter(4), merge = ctx.createChannelMerger(2);
+  src.connect(split);
+  split.connect(merge, 0, 0); split.connect(merge, 1, 1);
+  merge.connect(dryGain);
+  split.connect(convF, 2); split.connect(convB, 3);
+  convF.connect(wetGain); convB.connect(wetGain);
   dryGain.connect(master); wetGain.connect(master); master.connect(limiter); limiter.connect(ctx.destination);
   try { await setupRecorder(limiter); } catch (e) { $('recBtn').disabled = true; }
   if (ctx.state !== 'running') await ctx.resume();
@@ -1648,22 +2238,63 @@ async function start() {
   strum.setShape(shape);
 }
 
-// Small room: early reflections plus a diffuse tail, slightly different per ear.
-function makeRoom(ac) {
-  const sr = ac.sampleRate, len = Math.round(sr * 1.6), buf = ac.createBuffer(2, len, sr);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    let lp = 0;
-    for (let i = 0; i < len; i++) {
-      const t = i / sr;
-      const n = Math.random() * 2 - 1;
-      lp += (n - lp) * (0.55 - 0.4 * Math.min(1, t / 1.2)); // darker as it decays
-      d[i] = lp * Math.exp(-t / 0.32) * (t < 0.012 ? t / 0.012 : 1);
-    }
-    const refl = [0.011, 0.017, 0.023, 0.031, 0.043, 0.052];
-    refl.forEach((r, k) => { const i = Math.round((r + ch * 0.0017 * (k + 1)) * sr); if (i < len) d[i] += (0.6 / (k + 1)) * (k % 2 ? -1 : 1); });
-  }
-  return buf;
+// ---------- the space: wood, holding, mics, room ----------
+const SP = () => window.AcousticSpace;
+const scene = {
+  room: store.get('sp.room', 'living'), mics: store.get('sp.mics', 'fret12'), pattern: store.get('sp.pattern', 'default'),
+  dist: store.get('sp.dist', 1), gx: store.get('sp.gx', 0.42), gy: store.get('sp.gy', 0.62), yaw: store.get('sp.yaw', 0),
+  trim: store.get('sp.trim', 0)
+};
+const build = {
+  top: store.get('b.top', 'sitka'), back: store.get('b.back', 'indian'), bracing: store.get('b.bracing', 'standard'),
+  finish: store.get('b.finish', 'nitro'), hold: store.get('b.hold', 'seated')
+};
+function sceneObject() {
+  const S = SP(), room = S.ROOMS[scene.room];
+  const h = build.hold === 'stand' ? 0.75 : build.hold === 'firm' ? 1.05 : 0.95;
+  const [Lx, Ly] = room.dims;
+  const mx = Math.min(1.2, Lx * 0.2), my = Math.min(1.2, Ly * 0.2);
+  const pos = [Math.max(mx, Math.min(Lx - mx, Lx * scene.gx)), Math.max(my, Math.min(Ly - my, Ly * scene.gy)), h];
+  return { room: scene.room, mics: S.scaledSetup(scene.mics, scene.dist, scene.pattern), hold: build.hold, guitar: { pos, yaw: scene.yaw } };
+}
+let irWorker = null, irBusy = false, irPending = false, irSeq = 0;
+function ensureWorker() {
+  if (irWorker) return irWorker;
+  try {
+    const code = document.getElementById('dsp-src').textContent + `
+      self.onmessage = (e) => { const { id, scene, sr } = e.data; const ir = AcousticSpace.buildIRs(scene, sr);
+        const bufs = [ir.front[0], ir.front[1], ir.back[0], ir.back[1]];
+        self.postMessage({ id, bufs, rt: ir.rt, V: ir.V }, bufs.map(b => b.buffer)); };`;
+    irWorker = new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+    irWorker.onmessage = (e) => { irBusy = false; applyIR(e.data); if (irPending) { irPending = false; rebuildRoom(); } };
+    irWorker.onerror = () => { irWorker = null; };
+  } catch (e) { irWorker = null; }
+  return irWorker;
+}
+function applyIR(d) {
+  if (!ctx) return;
+  const mk = (a, b) => { const buf = ctx.createBuffer(2, a.length, ctx.sampleRate); buf.copyToChannel(a, 0); buf.copyToChannel(b, 1); return buf; };
+  convF.buffer = mk(d.bufs[0], d.bufs[1]); convB.buffer = mk(d.bufs[2], d.bufs[3]);
+  roomStats = { rt: d.rt, V: d.V };
+  drawRoomMap();
+}
+let roomStats = null;
+let roomTimer = 0;
+function rebuildRoom() {
+  clearTimeout(roomTimer);
+  roomTimer = setTimeout(() => {
+    if (!ctx) return;
+    const w = ensureWorker(), sc = sceneObject();
+    if (w) { if (irBusy) { irPending = true; return; } irBusy = true; w.postMessage({ id: ++irSeq, scene: sc, sr: ctx.sampleRate }); }
+    else { const ir = SP().buildIRs(sc, ctx.sampleRate); applyIR({ bufs: [ir.front[0], ir.front[1], ir.back[0], ir.back[1]], rt: ir.rt, V: ir.V }); }
+  }, 120);
+}
+function applyScene() {
+  const sc = sceneObject();
+  setEngine({ scene: { mics: sc.mics }, build: Object.assign({}, build) });
+  if (wetGain) wetGain.gain.value = Math.pow(10, scene.trim / 20) * 2.0; // 2.0: same reference gain as the direct path
+  rebuildRoom();
+  drawRoomMap();
 }
 
 // ---------- recording (tap after the limiter) ----------
@@ -1756,8 +2387,6 @@ const sliders = {
   bodysize: { out: v => v + '%', apply: v => setEngine({ bodySize: v / 100 }) },
   symp: { out: v => v, apply: v => setEngine({ sympathetic: v / 100 }) },
   noise: { out: v => v, apply: v => setEngine({ noise: v / 100 }) },
-  width: { out: v => v, apply: v => setEngine({ width: v / 70 }) },
-  room: { out: v => v, apply: v => { if (wetGain) { wetGain.gain.value = (v / 100) * 0.55; dryGain.gain.value = 1 - (v / 100) * 0.25; } } },
   vol: { out: v => v, apply: v => setEngine({ gain: Math.pow(v / 100, 1.5) * 1.5 }) }
 };
 function bindSliders() {
@@ -1774,6 +2403,7 @@ function bindSliders() {
 function applyAll() {
   for (const id in sliders) sliders[id].apply(+$(id).value);
   setEngine({ preset: $('preset').value, tuning, capo, quality });
+  applyScene();
 }
 function bindSegs() {
   document.querySelectorAll('.seg').forEach(seg => {
@@ -1801,6 +2431,105 @@ function bindSegs() {
     tuning = tun.value.split(',').map(Number); store.set('o.tuning', tun.value);
     strum.set({ tuning }); setEngine({ tuning }); renderChords();
   });
+}
+
+// ---------- space controls ----------
+function fillSelect(id, entries, val) {
+  const el = $(id); el.innerHTML = '';
+  for (const [k, v] of entries) { const o = document.createElement('option'); o.value = k; o.textContent = v; el.appendChild(o); }
+  el.value = val;
+}
+function bindSpace() {
+  const S = SP();
+  fillSelect('topWood', Object.entries(GUITAR_WOODS.top).map(([k, v]) => [k, v.name]), build.top);
+  fillSelect('backWood', Object.entries(GUITAR_WOODS.back).map(([k, v]) => [k, v.name]), build.back);
+  fillSelect('hold', Object.entries(GUITAR_HOLDS).map(([k, v]) => [k, v.name]), build.hold);
+  fillSelect('micSetup', Object.entries(S.MIC_SETUPS).map(([k, v]) => [k, v.name]), scene.mics);
+  fillSelect('roomSel', Object.entries(S.ROOMS).map(([k, v]) => [k, v.name]), scene.room);
+  $('bracing').value = build.bracing; $('finish').value = build.finish; $('micPattern').value = scene.pattern;
+  $('micDist').value = Math.round(scene.dist * 100); $('micDistOut').textContent = 'x' + scene.dist.toFixed(1);
+  $('roomTrim').value = scene.trim; $('roomTrimOut').textContent = scene.trim ? (scene.trim > 0 ? '+' : '') + scene.trim + ' dB' : 'as heard';
+  const onBuild = (id, key) => $(id).addEventListener('change', () => { build[key] = $(id).value; store.set('b.' + key, build[key]); applyScene(); });
+  onBuild('topWood', 'top'); onBuild('backWood', 'back'); onBuild('bracing', 'bracing'); onBuild('finish', 'finish'); onBuild('hold', 'hold');
+  const onScene = (id, key) => $(id).addEventListener('change', () => { scene[key] = $(id).value; store.set('sp.' + key, scene[key]); applyScene(); });
+  onScene('micSetup', 'mics'); onScene('micPattern', 'pattern'); onScene('roomSel', 'room');
+  $('micDist').addEventListener('input', () => { scene.dist = +$('micDist').value / 100; $('micDistOut').textContent = 'x' + scene.dist.toFixed(1); store.set('sp.dist', scene.dist); applyScene(); });
+  $('roomTrim').addEventListener('input', () => {
+    scene.trim = +$('roomTrim').value; store.set('sp.trim', scene.trim);
+    $('roomTrimOut').textContent = scene.trim ? (scene.trim > 0 ? '+' : '') + scene.trim + ' dB' : 'as heard';
+    if (wetGain) wetGain.gain.value = Math.pow(10, scene.trim / 20) * 2.0;
+  });
+  $('turnGuitar').addEventListener('click', () => { scene.yaw = (scene.yaw + Math.PI / 4) % (2 * Math.PI); store.set('sp.yaw', scene.yaw); applyScene(); });
+  // drag the guitar on the map
+  const map = $('roomMap');
+  const moveTo = (e) => {
+    const r = map.getBoundingClientRect(), g = mapGeom();
+    if (!g) return;
+    const x = (e.clientX - r.left - g.ox) / g.k, y = (e.clientY - r.top - g.oy) / g.k;
+    scene.gx = Math.max(0, Math.min(1, x / g.Lx)); scene.gy = Math.max(0, Math.min(1, y / g.Ly));
+    drawRoomMap();
+  };
+  map.addEventListener('pointerdown', (e) => { map.setPointerCapture(e.pointerId); moveTo(e); });
+  map.addEventListener('pointermove', (e) => { if (e.buttons) moveTo(e); });
+  map.addEventListener('pointerup', () => { store.set('sp.gx', scene.gx); store.set('sp.gy', scene.gy); applyScene(); });
+  window.addEventListener('resize', drawRoomMap);
+  drawRoomMap();
+}
+function mapGeom() {
+  const map = $('roomMap'); const S = SP(); if (!map || !S) return null;
+  const room = S.ROOMS[scene.room], W = map.clientWidth, H = map.clientHeight;
+  const Lx = room.open ? 12 : room.dims[0], Ly = room.open ? 8 : room.dims[1];
+  const k = Math.min((W - 24) / Lx, (H - 34) / Ly);
+  return { W, H, Lx, Ly, k, ox: (W - Lx * k) / 2, oy: 20 + (H - 34 - Ly * k) / 2, room };
+}
+function drawRoomMap() {
+  const map = $('roomMap'); const S = SP(); if (!map || !S) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  map.width = Math.round(map.clientWidth * dpr); map.height = Math.round(map.clientHeight * dpr);
+  const g = map.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const G = mapGeom(), room = G.room, cs = getComputedStyle(document.documentElement);
+  const col = (v) => cs.getPropertyValue(v).trim();
+  g.clearRect(0, 0, G.W, G.H);
+  const X = (x) => G.ox + x * G.k, Y = (y) => G.oy + y * G.k;
+  // walls, colored by how reflective they are at 1 kHz
+  const wall = (key, x0, y0, x1, y1) => {
+    if (room.open) return;
+    const a = S.MATERIALS[room.walls[key]].a[3];
+    g.strokeStyle = a < 0.15 ? col('--brass') : a < 0.5 ? col('--muted') : col('--faint');
+    g.lineWidth = a < 0.15 ? 3 : 2; g.beginPath(); g.moveTo(X(x0), Y(y0)); g.lineTo(X(x1), Y(y1)); g.stroke();
+  };
+  wall('y0', 0, 0, G.Lx, 0); wall('y1', 0, G.Ly, G.Lx, G.Ly); wall('x0', 0, 0, 0, G.Ly); wall('x1', G.Lx, 0, G.Lx, G.Ly);
+  if (room.open) { g.fillStyle = col('--panel'); g.fillRect(X(0), Y(0), G.Lx * G.k, G.Ly * G.k); }
+  g.fillStyle = col('--faint'); g.font = '10px "JetBrains Mono", monospace'; g.textAlign = 'left';
+  g.fillText(room.open ? 'open air, grass below' : `${room.dims[0]} × ${room.dims[1]} × ${room.dims[2]} m · floor ${S.MATERIALS[room.walls.floor].name.toLowerCase()}`, 8, 12);
+  // guitar, player and mics
+  const sc = sceneObject();
+  const pl = S.placement(sc);
+  const P = (p) => { const r = pl.toRoom(p); return [X(r[0]), Y(r[1])]; };
+  const big = Math.max(1, 0.9 / (G.k * 0.42)); // draw tiny guitars bigger in large rooms
+  const Pz = (p) => { const r = pl.toRoom([p[0] * big, p[1] * big, p[2] * big]); const o = pl.toRoom([0, 0, 0]); return [X(o[0] + (r[0] - o[0])), Y(o[1] + (r[1] - o[1]))]; };
+  if (build.hold !== 'stand') { const c = Pz([0.1, 0, -0.3]); g.fillStyle = col('--panel-2'); g.strokeStyle = col('--faint'); g.lineWidth = 1; g.beginPath(); g.arc(c[0], c[1], 0.2 * G.k * big, 0, 7); g.fill(); g.stroke(); }
+  const a = Pz([-0.2, 0, 0]), b = Pz([0.33, 0, 0]), neck = Pz([0.7, 0, 0]);
+  g.strokeStyle = col('--brass'); g.lineWidth = Math.max(5, 0.1 * G.k * big); g.lineCap = 'round';
+  g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  g.lineWidth = Math.max(2, 0.04 * G.k * big); g.beginPath(); g.moveTo(b[0], b[1]); g.lineTo(neck[0], neck[1]); g.stroke();
+  const face = Pz([0.05, 0, 0.18]), fo = Pz([0.05, 0, 0]);
+  g.strokeStyle = col('--accent'); g.lineWidth = 1; g.beginPath(); g.moveTo(fo[0], fo[1]); g.lineTo(face[0], face[1]); g.stroke();
+  const mics = S.expandMics(sc.mics);
+  let dmin = Infinity;
+  for (const m of mics) {
+    const p = m.ear ? Pz(m.p) : (big > 1.01 ? Pz(m.p) : P(m.p));
+    dmin = Math.min(dmin, Math.hypot(m.p[0] - 0.12, m.p[1], m.p[2]));
+    g.fillStyle = col('--fg'); g.beginPath(); g.arc(p[0], p[1], 3.5, 0, 7); g.fill();
+    const q = (big > 1.01 || m.ear) ? Pz([m.p[0] + m.axis[0] * 0.12, m.p[1] + m.axis[1] * 0.12, m.p[2] + m.axis[2] * 0.12]) : P([m.p[0] + m.axis[0] * 0.12, m.p[1] + m.axis[1] * 0.12, m.p[2] + m.axis[2] * 0.12]);
+    g.strokeStyle = col('--fg'); g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+  }
+  // stats
+  const E = S.eyring(room);
+  const rt = room.open ? null : (E.rt[2] + E.rt[3]) / 2;
+  const rc = rt ? 0.057 * Math.sqrt(2 * E.V / rt) : null;
+  $('roomInfo').textContent = room.open ? `No walls: only the ground reflects. Nearest mic ${dmin.toFixed(2)} m from the soundhole.`
+    : `Reverb time ${rt.toFixed(2)} s (500 Hz–1 kHz) · critical distance ${rc.toFixed(1)} m · nearest mic ${dmin.toFixed(2)} m`;
 }
 
 // ---------- chord pads & strum pads ----------
@@ -2118,7 +2847,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });

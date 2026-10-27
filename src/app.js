@@ -4,7 +4,7 @@
 const $ = (id) => document.getElementById(id);
 const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 
-let ctx = null, node = null, fallback = null, master = null, wetGain = null, dryGain = null, convolver = null, recNode = null;
+let ctx = null, node = null, fallback = null, master = null, wetGain = null, dryGain = null, convF = null, convB = null, recNode = null;
 let meters = [0, 0, 0, 0, 0, 0].map(() => ({ e: 0, fret: 0, damp: 0, active: false }));
 let started = false;
 let tuning = [40, 45, 50, 55, 59, 64], capo = 0;
@@ -49,7 +49,8 @@ async function start() {
   ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
   master = ctx.createGain(); master.gain.value = 1;
   dryGain = ctx.createGain(); wetGain = ctx.createGain();
-  convolver = ctx.createConvolver(); convolver.buffer = makeRoom(ctx);
+  // the room: one convolver per source side (top / back), impulse responses from the image-source model
+  convF = ctx.createConvolver(); convB = ctx.createConvolver(); convF.normalize = false; convB.normalize = false;
   const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.value = -4; limiter.knee.value = 4; limiter.ratio.value = 12; limiter.attack.value = 0.001; limiter.release.value = 0.12;
   let src;
@@ -57,7 +58,7 @@ async function start() {
     const code = document.getElementById('dsp-src').textContent;
     const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
     await ctx.audioWorklet.addModule(url);
-    node = new AudioWorkletNode(ctx, 'acoustic-guitar', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    node = new AudioWorkletNode(ctx, 'acoustic-guitar', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [4] });
     node.port.onmessage = (m) => { if (m.data.meters) meters = m.data.meters; };
     src = node;
   } catch (err) {
@@ -65,15 +66,21 @@ async function start() {
     console.warn('AudioWorklet unavailable, using ScriptProcessor', err);
     fallback = new GuitarEngine(ctx.sampleRate);
     fallback.clock = Math.round(ctx.currentTime * ctx.sampleRate);
-    const sp = ctx.createScriptProcessor(512, 0, 2);
+    const sp = ctx.createScriptProcessor(512, 0, 4);
     sp.onaudioprocess = (e) => {
-      const L = e.outputBuffer.getChannelData(0), R = e.outputBuffer.getChannelData(1);
-      fallback.render(L, R, L.length, 0);
+      const ob = e.outputBuffer, L = ob.getChannelData(0), R = ob.getChannelData(1);
+      fallback.render(L, R, L.length, 0, ob.numberOfChannels > 2 ? ob.getChannelData(2) : null, ob.numberOfChannels > 3 ? ob.getChannelData(3) : null);
       meters = fallback.meters();
     };
     src = sp;
   }
-  src.connect(dryGain); src.connect(convolver); convolver.connect(wetGain);
+  // channels: 0/1 direct sound at the mics, 2 top-side feed, 3 back-side feed
+  const split = ctx.createChannelSplitter(4), merge = ctx.createChannelMerger(2);
+  src.connect(split);
+  split.connect(merge, 0, 0); split.connect(merge, 1, 1);
+  merge.connect(dryGain);
+  split.connect(convF, 2); split.connect(convB, 3);
+  convF.connect(wetGain); convB.connect(wetGain);
   dryGain.connect(master); wetGain.connect(master); master.connect(limiter); limiter.connect(ctx.destination);
   try { await setupRecorder(limiter); } catch (e) { $('recBtn').disabled = true; }
   if (ctx.state !== 'running') await ctx.resume();
@@ -83,22 +90,63 @@ async function start() {
   strum.setShape(shape);
 }
 
-// Small room: early reflections plus a diffuse tail, slightly different per ear.
-function makeRoom(ac) {
-  const sr = ac.sampleRate, len = Math.round(sr * 1.6), buf = ac.createBuffer(2, len, sr);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    let lp = 0;
-    for (let i = 0; i < len; i++) {
-      const t = i / sr;
-      const n = Math.random() * 2 - 1;
-      lp += (n - lp) * (0.55 - 0.4 * Math.min(1, t / 1.2)); // darker as it decays
-      d[i] = lp * Math.exp(-t / 0.32) * (t < 0.012 ? t / 0.012 : 1);
-    }
-    const refl = [0.011, 0.017, 0.023, 0.031, 0.043, 0.052];
-    refl.forEach((r, k) => { const i = Math.round((r + ch * 0.0017 * (k + 1)) * sr); if (i < len) d[i] += (0.6 / (k + 1)) * (k % 2 ? -1 : 1); });
-  }
-  return buf;
+// ---------- the space: wood, holding, mics, room ----------
+const SP = () => window.AcousticSpace;
+const scene = {
+  room: store.get('sp.room', 'living'), mics: store.get('sp.mics', 'fret12'), pattern: store.get('sp.pattern', 'default'),
+  dist: store.get('sp.dist', 1), gx: store.get('sp.gx', 0.42), gy: store.get('sp.gy', 0.62), yaw: store.get('sp.yaw', 0),
+  trim: store.get('sp.trim', 0)
+};
+const build = {
+  top: store.get('b.top', 'sitka'), back: store.get('b.back', 'indian'), bracing: store.get('b.bracing', 'standard'),
+  finish: store.get('b.finish', 'nitro'), hold: store.get('b.hold', 'seated')
+};
+function sceneObject() {
+  const S = SP(), room = S.ROOMS[scene.room];
+  const h = build.hold === 'stand' ? 0.75 : build.hold === 'firm' ? 1.05 : 0.95;
+  const [Lx, Ly] = room.dims;
+  const mx = Math.min(1.2, Lx * 0.2), my = Math.min(1.2, Ly * 0.2);
+  const pos = [Math.max(mx, Math.min(Lx - mx, Lx * scene.gx)), Math.max(my, Math.min(Ly - my, Ly * scene.gy)), h];
+  return { room: scene.room, mics: S.scaledSetup(scene.mics, scene.dist, scene.pattern), hold: build.hold, guitar: { pos, yaw: scene.yaw } };
+}
+let irWorker = null, irBusy = false, irPending = false, irSeq = 0;
+function ensureWorker() {
+  if (irWorker) return irWorker;
+  try {
+    const code = document.getElementById('dsp-src').textContent + `
+      self.onmessage = (e) => { const { id, scene, sr } = e.data; const ir = AcousticSpace.buildIRs(scene, sr);
+        const bufs = [ir.front[0], ir.front[1], ir.back[0], ir.back[1]];
+        self.postMessage({ id, bufs, rt: ir.rt, V: ir.V }, bufs.map(b => b.buffer)); };`;
+    irWorker = new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+    irWorker.onmessage = (e) => { irBusy = false; applyIR(e.data); if (irPending) { irPending = false; rebuildRoom(); } };
+    irWorker.onerror = () => { irWorker = null; };
+  } catch (e) { irWorker = null; }
+  return irWorker;
+}
+function applyIR(d) {
+  if (!ctx) return;
+  const mk = (a, b) => { const buf = ctx.createBuffer(2, a.length, ctx.sampleRate); buf.copyToChannel(a, 0); buf.copyToChannel(b, 1); return buf; };
+  convF.buffer = mk(d.bufs[0], d.bufs[1]); convB.buffer = mk(d.bufs[2], d.bufs[3]);
+  roomStats = { rt: d.rt, V: d.V };
+  drawRoomMap();
+}
+let roomStats = null;
+let roomTimer = 0;
+function rebuildRoom() {
+  clearTimeout(roomTimer);
+  roomTimer = setTimeout(() => {
+    if (!ctx) return;
+    const w = ensureWorker(), sc = sceneObject();
+    if (w) { if (irBusy) { irPending = true; return; } irBusy = true; w.postMessage({ id: ++irSeq, scene: sc, sr: ctx.sampleRate }); }
+    else { const ir = SP().buildIRs(sc, ctx.sampleRate); applyIR({ bufs: [ir.front[0], ir.front[1], ir.back[0], ir.back[1]], rt: ir.rt, V: ir.V }); }
+  }, 120);
+}
+function applyScene() {
+  const sc = sceneObject();
+  setEngine({ scene: { mics: sc.mics }, build: Object.assign({}, build) });
+  if (wetGain) wetGain.gain.value = Math.pow(10, scene.trim / 20) * 2.0; // 2.0: same reference gain as the direct path
+  rebuildRoom();
+  drawRoomMap();
 }
 
 // ---------- recording (tap after the limiter) ----------
@@ -191,8 +239,6 @@ const sliders = {
   bodysize: { out: v => v + '%', apply: v => setEngine({ bodySize: v / 100 }) },
   symp: { out: v => v, apply: v => setEngine({ sympathetic: v / 100 }) },
   noise: { out: v => v, apply: v => setEngine({ noise: v / 100 }) },
-  width: { out: v => v, apply: v => setEngine({ width: v / 70 }) },
-  room: { out: v => v, apply: v => { if (wetGain) { wetGain.gain.value = (v / 100) * 0.55; dryGain.gain.value = 1 - (v / 100) * 0.25; } } },
   vol: { out: v => v, apply: v => setEngine({ gain: Math.pow(v / 100, 1.5) * 1.5 }) }
 };
 function bindSliders() {
@@ -209,6 +255,7 @@ function bindSliders() {
 function applyAll() {
   for (const id in sliders) sliders[id].apply(+$(id).value);
   setEngine({ preset: $('preset').value, tuning, capo, quality });
+  applyScene();
 }
 function bindSegs() {
   document.querySelectorAll('.seg').forEach(seg => {
@@ -236,6 +283,105 @@ function bindSegs() {
     tuning = tun.value.split(',').map(Number); store.set('o.tuning', tun.value);
     strum.set({ tuning }); setEngine({ tuning }); renderChords();
   });
+}
+
+// ---------- space controls ----------
+function fillSelect(id, entries, val) {
+  const el = $(id); el.innerHTML = '';
+  for (const [k, v] of entries) { const o = document.createElement('option'); o.value = k; o.textContent = v; el.appendChild(o); }
+  el.value = val;
+}
+function bindSpace() {
+  const S = SP();
+  fillSelect('topWood', Object.entries(GUITAR_WOODS.top).map(([k, v]) => [k, v.name]), build.top);
+  fillSelect('backWood', Object.entries(GUITAR_WOODS.back).map(([k, v]) => [k, v.name]), build.back);
+  fillSelect('hold', Object.entries(GUITAR_HOLDS).map(([k, v]) => [k, v.name]), build.hold);
+  fillSelect('micSetup', Object.entries(S.MIC_SETUPS).map(([k, v]) => [k, v.name]), scene.mics);
+  fillSelect('roomSel', Object.entries(S.ROOMS).map(([k, v]) => [k, v.name]), scene.room);
+  $('bracing').value = build.bracing; $('finish').value = build.finish; $('micPattern').value = scene.pattern;
+  $('micDist').value = Math.round(scene.dist * 100); $('micDistOut').textContent = 'x' + scene.dist.toFixed(1);
+  $('roomTrim').value = scene.trim; $('roomTrimOut').textContent = (scene.trim > 0 ? '+' : '') + scene.trim + ' dB';
+  const onBuild = (id, key) => $(id).addEventListener('change', () => { build[key] = $(id).value; store.set('b.' + key, build[key]); applyScene(); });
+  onBuild('topWood', 'top'); onBuild('backWood', 'back'); onBuild('bracing', 'bracing'); onBuild('finish', 'finish'); onBuild('hold', 'hold');
+  const onScene = (id, key) => $(id).addEventListener('change', () => { scene[key] = $(id).value; store.set('sp.' + key, scene[key]); applyScene(); });
+  onScene('micSetup', 'mics'); onScene('micPattern', 'pattern'); onScene('roomSel', 'room');
+  $('micDist').addEventListener('input', () => { scene.dist = +$('micDist').value / 100; $('micDistOut').textContent = 'x' + scene.dist.toFixed(1); store.set('sp.dist', scene.dist); applyScene(); });
+  $('roomTrim').addEventListener('input', () => {
+    scene.trim = +$('roomTrim').value; store.set('sp.trim', scene.trim);
+    $('roomTrimOut').textContent = (scene.trim > 0 ? '+' : '') + scene.trim + ' dB';
+    if (wetGain) wetGain.gain.value = Math.pow(10, scene.trim / 20) * 2.0;
+  });
+  $('turnGuitar').addEventListener('click', () => { scene.yaw = (scene.yaw + Math.PI / 4) % (2 * Math.PI); store.set('sp.yaw', scene.yaw); applyScene(); });
+  // drag the guitar on the map
+  const map = $('roomMap');
+  const moveTo = (e) => {
+    const r = map.getBoundingClientRect(), g = mapGeom();
+    if (!g) return;
+    const x = (e.clientX - r.left - g.ox) / g.k, y = (e.clientY - r.top - g.oy) / g.k;
+    scene.gx = Math.max(0, Math.min(1, x / g.Lx)); scene.gy = Math.max(0, Math.min(1, y / g.Ly));
+    drawRoomMap();
+  };
+  map.addEventListener('pointerdown', (e) => { map.setPointerCapture(e.pointerId); moveTo(e); });
+  map.addEventListener('pointermove', (e) => { if (e.buttons) moveTo(e); });
+  map.addEventListener('pointerup', () => { store.set('sp.gx', scene.gx); store.set('sp.gy', scene.gy); applyScene(); });
+  window.addEventListener('resize', drawRoomMap);
+  drawRoomMap();
+}
+function mapGeom() {
+  const map = $('roomMap'); const S = SP(); if (!map || !S) return null;
+  const room = S.ROOMS[scene.room], W = map.clientWidth, H = map.clientHeight;
+  const Lx = room.open ? 12 : room.dims[0], Ly = room.open ? 8 : room.dims[1];
+  const k = Math.min((W - 24) / Lx, (H - 34) / Ly);
+  return { W, H, Lx, Ly, k, ox: (W - Lx * k) / 2, oy: 20 + (H - 34 - Ly * k) / 2, room };
+}
+function drawRoomMap() {
+  const map = $('roomMap'); const S = SP(); if (!map || !S) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  map.width = Math.round(map.clientWidth * dpr); map.height = Math.round(map.clientHeight * dpr);
+  const g = map.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const G = mapGeom(), room = G.room, cs = getComputedStyle(document.documentElement);
+  const col = (v) => cs.getPropertyValue(v).trim();
+  g.clearRect(0, 0, G.W, G.H);
+  const X = (x) => G.ox + x * G.k, Y = (y) => G.oy + y * G.k;
+  // walls, colored by how reflective they are at 1 kHz
+  const wall = (key, x0, y0, x1, y1) => {
+    if (room.open) return;
+    const a = S.MATERIALS[room.walls[key]].a[3];
+    g.strokeStyle = a < 0.15 ? col('--brass') : a < 0.5 ? col('--muted') : col('--faint');
+    g.lineWidth = a < 0.15 ? 3 : 2; g.beginPath(); g.moveTo(X(x0), Y(y0)); g.lineTo(X(x1), Y(y1)); g.stroke();
+  };
+  wall('y0', 0, 0, G.Lx, 0); wall('y1', 0, G.Ly, G.Lx, G.Ly); wall('x0', 0, 0, 0, G.Ly); wall('x1', G.Lx, 0, G.Lx, G.Ly);
+  if (room.open) { g.fillStyle = col('--panel'); g.fillRect(X(0), Y(0), G.Lx * G.k, G.Ly * G.k); }
+  g.fillStyle = col('--faint'); g.font = '10px "JetBrains Mono", monospace'; g.textAlign = 'left';
+  g.fillText(room.open ? 'open air, grass below' : `${room.dims[0]} × ${room.dims[1]} × ${room.dims[2]} m · floor ${S.MATERIALS[room.walls.floor].name.toLowerCase()}`, 8, 12);
+  // guitar, player and mics
+  const sc = sceneObject();
+  const pl = S.placement(sc);
+  const P = (p) => { const r = pl.toRoom(p); return [X(r[0]), Y(r[1])]; };
+  const big = Math.max(1, 0.9 / (G.k * 0.42)); // draw tiny guitars bigger in large rooms
+  const Pz = (p) => { const r = pl.toRoom([p[0] * big, p[1] * big, p[2] * big]); const o = pl.toRoom([0, 0, 0]); return [X(o[0] + (r[0] - o[0])), Y(o[1] + (r[1] - o[1]))]; };
+  if (build.hold !== 'stand') { const c = Pz([0.1, 0, -0.3]); g.fillStyle = col('--panel-2'); g.strokeStyle = col('--faint'); g.lineWidth = 1; g.beginPath(); g.arc(c[0], c[1], 0.2 * G.k * big, 0, 7); g.fill(); g.stroke(); }
+  const a = Pz([-0.2, 0, 0]), b = Pz([0.33, 0, 0]), neck = Pz([0.7, 0, 0]);
+  g.strokeStyle = col('--brass'); g.lineWidth = Math.max(5, 0.1 * G.k * big); g.lineCap = 'round';
+  g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  g.lineWidth = Math.max(2, 0.04 * G.k * big); g.beginPath(); g.moveTo(b[0], b[1]); g.lineTo(neck[0], neck[1]); g.stroke();
+  const face = Pz([0.05, 0, 0.18]), fo = Pz([0.05, 0, 0]);
+  g.strokeStyle = col('--accent'); g.lineWidth = 1; g.beginPath(); g.moveTo(fo[0], fo[1]); g.lineTo(face[0], face[1]); g.stroke();
+  const mics = S.expandMics(sc.mics);
+  let dmin = Infinity;
+  for (const m of mics) {
+    const p = m.ear ? Pz(m.p) : (big > 1.01 ? Pz(m.p) : P(m.p));
+    dmin = Math.min(dmin, Math.hypot(m.p[0] - 0.12, m.p[1], m.p[2]));
+    g.fillStyle = col('--fg'); g.beginPath(); g.arc(p[0], p[1], 3.5, 0, 7); g.fill();
+    const q = (big > 1.01 || m.ear) ? Pz([m.p[0] + m.axis[0] * 0.12, m.p[1] + m.axis[1] * 0.12, m.p[2] + m.axis[2] * 0.12]) : P([m.p[0] + m.axis[0] * 0.12, m.p[1] + m.axis[1] * 0.12, m.p[2] + m.axis[2] * 0.12]);
+    g.strokeStyle = col('--fg'); g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+  }
+  // stats
+  const E = S.eyring(room);
+  const rt = room.open ? null : (E.rt[2] + E.rt[3]) / 2;
+  const rc = rt ? 0.057 * Math.sqrt(2 * E.V / rt) : null;
+  $('roomInfo').textContent = room.open ? `No walls: only the ground reflects. Nearest mic ${dmin.toFixed(2)} m from the soundhole.`
+    : `Reverb time ${rt.toFixed(2)} s (500 Hz–1 kHz) · critical distance ${rc.toFixed(1)} m · nearest mic ${dmin.toFixed(2)} m`;
 }
 
 // ---------- chord pads & strum pads ----------
@@ -553,7 +699,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });

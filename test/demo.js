@@ -1,6 +1,7 @@
 // A/B demo: the same performance through the strum engine and a chosen DSP engine.
 // usage: ENGINE=legacy|modal node test/demo.js out.wav
 const path = require('path');
+require(path.join(__dirname, '../src/space.js'));
 require(path.join(__dirname, process.env.ENGINE === 'legacy' ? 'legacy_waveguide.js' : '../src/modal.js'));
 require(path.join(__dirname, '../src/strum.js'));
 const { writeWav } = require('./render.js');

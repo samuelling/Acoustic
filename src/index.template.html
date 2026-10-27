@@ -88,9 +88,28 @@
       <div class="row"><label for="bodysize">Body size</label><input id="bodysize" type="range" min="80" max="125" value="100"><output id="bodysizeOut">100%</output></div>
       <div class="row"><label for="symp">Sympathetic</label><input id="symp" type="range" min="0" max="100" value="50"><output id="sympOut">50</output></div>
       <div class="row"><label for="noise">Finger noise</label><input id="noise" type="range" min="0" max="100" value="50"><output id="noiseOut">50</output></div>
-      <div class="row"><label for="width">Mic width</label><input id="width" type="range" min="0" max="100" value="70"><output id="widthOut">70</output></div>
-      <div class="row"><label for="room">Room</label><input id="room" type="range" min="0" max="100" value="22"><output id="roomOut">22</output></div>
+      <div class="row wide"><label for="topWood">Top</label><select id="topWood"></select></div>
+      <div class="row wide"><label for="backWood">Back &amp; sides</label><select id="backWood"></select></div>
+      <div class="row wide"><label for="bracing">Bracing</label>
+        <select id="bracing"><option value="standard">Standard X</option><option value="scalloped">Scalloped X</option><option value="forward">Forward-shifted X</option></select></div>
+      <div class="row wide"><label for="finish">Finish</label>
+        <select id="finish"><option value="nitro">Thin nitrocellulose</option><option value="poly">Thick polyurethane</option><option value="none">Unfinished</option></select></div>
+      <div class="row wide"><label for="hold">Holding</label><select id="hold"></select></div>
       <div class="row"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="75"><output id="volOut">75</output></div>
+    </div>
+
+    <div class="group space-group">
+      <h2>Mics &amp; room</h2>
+      <p class="hint">Drag the guitar around the room. Every reflection is traced from the walls to the mics.</p>
+      <canvas id="roomMap" aria-label="Room map: drag the guitar"></canvas>
+      <div class="note" id="roomInfo">&nbsp;</div>
+      <div class="row wide"><label for="micSetup">Mics</label><select id="micSetup"></select></div>
+      <div class="row wide"><label for="micPattern">Pattern</label>
+        <select id="micPattern"><option value="default">As set up</option><option value="omni">Omni</option><option value="cardioid">Cardioid</option><option value="supercardioid">Supercardioid</option><option value="fig8">Figure-8</option></select></div>
+      <div class="row"><label for="micDist">Mic distance</label><input id="micDist" type="range" min="40" max="400" value="100"><output id="micDistOut">x1.0</output></div>
+      <div class="row wide"><label for="roomSel">Room</label><select id="roomSel"></select></div>
+      <div class="row"><label for="roomTrim">Room level</label><input id="roomTrim" type="range" min="-24" max="12" value="0"><output id="roomTrimOut">0 dB</output></div>
+      <div class="toggles"><button class="btn" id="turnGuitar" type="button">Turn guitar 45°</button></div>
     </div>
 
     <div class="group">

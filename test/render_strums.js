@@ -1,6 +1,7 @@
 // Render a strummed progression through the real strum engine + DSP, with a .strums label file.
 // usage: node test/render_strums.js out.wav out.strums [bpm]
 const fs = require('fs'), path = require('path');
+require(path.join(__dirname, '../src/space.js'));
 require(path.join(__dirname, process.env.ENGINE === 'legacy' ? 'legacy_waveguide.js' : '../src/modal.js'));
 require(path.join(__dirname, '../src/strum.js'));
 const { writeWav } = require('./render.js');
