@@ -184,7 +184,8 @@ class StrumEngine {
     this.onVoicing = opts.onVoicing || (() => {});
     this.rng = opts.rng || Math.random;
     this.o = {
-      mode: 'pick',          // 'pick' | 'finger'
+      mode: 'pick',          // 'pick' | 'finger' | 'pattern' (the right hand plays a style's pattern on held chords)
+      style: 'travis', bpm: 96, skill: 0.6, brushes: 1,
       voicing: 'played',     // 'played' | 'guitarize'
       direction: 'auto',     // 'auto' | 'down' | 'up' | 'alternate'
       speed: 0.055,          // seconds for a 6-string stroke at medium velocity (measured strums: 26-62 ms)
@@ -210,6 +211,8 @@ class StrumEngine {
     this.handPos = 0; this.lastShapeTime = -1;
     this.shape = null;
     this.lookahead = 0.006;
+    this.melodyKeys = new Map();
+    this.hand = root.RightHand ? new root.RightHand({ send: (e) => this.send(e), now: () => this.now(), rng: () => this.rng(), open: () => this.open(), options: () => this.o }) : null;
   }
   set(opts) { Object.assign(this.o, opts); }
   open() { return this.o.tuning.map(t => t + this.o.capo); }
@@ -227,6 +230,7 @@ class StrumEngine {
     }
   }
   noteOff(midi) {
+    if (this.melodyKeys.has(midi)) { this.hand.releaseMelody(this.melodyKeys.get(midi)); this.melodyKeys.delete(midi); return; }
     const i = this.pending.findIndex(p => p.midi === midi);
     if (i >= 0) { // released before the chord was even voiced: play it anyway, then let it go
       this.pending[i].releaseAfter = true;
@@ -236,6 +240,7 @@ class StrumEngine {
   }
   setSustain(on) {
     this.sustain = on;
+    if (!on && this.hand && this.hand.running && ![...this.groups.values()].some(x => x.keys.size)) setTimeout(() => { if (!this.sustain && ![...this.groups.values()].some(x => x.keys.size)) this.hand.stop(); }, this.o.hold * 1000);
     if (!on) for (const [id, g] of this.groups) if (g.keys.size === 0) this.dampGroup(id);
   }
 
@@ -243,6 +248,12 @@ class StrumEngine {
     clearTimeout(this.timer); this.timer = null;
     const notes = this.pending; this.pending = [];
     if (!notes.length) return;
+    // a single note over a running pattern is melody, taken by the plucking fingers on a string of its own
+    if (notes.length === 1 && this.o.mode === 'pattern' && this.hand && this.hand.running) {
+      const n = notes[0], t0m = Math.max(this.now() + this.lookahead, n.t + this.o.gather * 0.5);
+      const s = this.hand.playMelody(this.fold(n.midi, this.open()), n.vel, t0m);
+      if (s != null) { this.melodyKeys.set(n.midi, s); if (n.releaseAfter) setTimeout(() => this.noteOff(n.midi), 120); return; }
+    }
     const t0 = Math.max(this.now() + this.lookahead, Math.min(...notes.map(n => n.t)) + this.o.gather);
     const vel = Math.max(...notes.map(n => n.vel));
     const midis = notes.map(n => n.midi);
@@ -269,7 +280,8 @@ class StrumEngine {
     const evs = [];
     if (shift >= 2 && t0 - this.lastShapeTime < 1.5) this.squeaks(evs, v, shift, t0);
     this.lastShapeTime = t0;
-    if (sounding.length === 1) this.single(evs, sounding[0], v.map[sounding[0]], vel, t0);
+    if (this.o.mode === 'pattern' && this.hand && sounding.length > 1) this.hand.chord(v, vel, t0);
+    else if (sounding.length === 1) this.single(evs, sounding[0], v.map[sounding[0]], vel, t0);
     else this.chord(evs, v, vel, t0);
     this.send(evs);
     // keys that were released during the gather window
@@ -318,6 +330,9 @@ class StrumEngine {
     const g = this.groups.get(h.group);
     if (!g) return;
     g.keys.delete(midi);
+    if (this.hand && this.hand.running && !this.sustain && ![...this.groups.values()].some(x => x.keys.size)) {
+      setTimeout(() => { if (!this.sustain && ![...this.groups.values()].some(x => x.keys.size)) this.hand.stop(); }, this.o.hold * 1000);
+    }
     if (this.o.letRing || this.sustain) return;
     if (this.o.voicing === 'guitarize' && this.groups.get(h.group).keys.size) return; // shape held while any key is down
     if (this.o.voicing === 'guitarize') { this.later(() => this.dampGroup(h.group), h.group); return; }
@@ -410,7 +425,7 @@ class StrumEngine {
       const jitter = gauss(this.rng) * 0.0012 * h;
       const tt = t + base + catchAcc + jitter;
       // each string resists the pick briefly; heavier strings longer, harder strokes push through faster
-      catchAcc += (0.0009 + 0.0007 * (5 - s) / 5) * (1.1 - 0.6 * vel) * (1 + 0.3 * gauss(this.rng) * h);
+      catchAcc += (0.0009 + 0.0007 * (5 - s) / 5) * (1.1 - 0.6 * vel) * (1 + 0.3 * gauss(this.rng) * h) * (this.o.pickHold || 1);
       const fret = v.frets[s];
       const dead = fret < 0;
       // recorded upstrokes are only ~1.5 dB softer than downstrokes and brighter (treble strings, pick edge)
@@ -486,6 +501,7 @@ class StrumEngine {
       pickPos: this.o.pickPos, t: this.now() + 0.003 }]);
   }
   allOff() {
+    if (this.hand) this.hand.stop();
     this.pending = []; this.held.clear(); this.groups.clear(); this.owner.fill(null);
     this.send([{ type: 'allOff', t: this.now() }]);
   }

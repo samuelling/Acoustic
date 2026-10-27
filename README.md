@@ -35,7 +35,9 @@ Braces carry about half the low-mode stiffness. Each body mode is shifted by its
 
 **Holding.** Torso contact roughly halves the Q of back-dominated modes, adds about 20–30% damping to A0 and T(1,1), lowers back modes about 1%, and absorbs the back's radiation (Le Carrou, Paté & Chomette 2019; Woodhouse 2004).
 
-**Radiation and microphones.** Seven radiating regions: soundhole, bridge, lower bout bass and treble halves, below the bridge, upper bout, back. Each low mode has its own pattern over them (A0 through the soundhole; dipoles with halves in opposite phase); high modes each live in one region. Each mic hears every region at its own distance (delay and 1/r), through its polar pattern A + B·cosθ, with the near-field gradient term B·cosθ·(c/(jωr)) that produces the proximity effect, and with a diffraction lowpass for regions facing away (the body, or the player's head for the ears view). Setups: soundhole 15 cm, 12th fret 20 cm, lower bout, spaced pair, XY 40 cm, room pair at 2 m, and the player's own ears. Preamp gain is normalized per setup.
+**Radiation and microphones.** Seven radiating regions: soundhole, bridge, lower bout bass and treble halves, below the bridge, upper bout, back. Each low mode has its own pattern over them (A0 through the soundhole; dipoles with halves in opposite phase); high modes each live in one region. Each mic hears every region at its own distance (delay and 1/r), through its polar pattern A + B·cosθ, with the near-field gradient term B·cosθ·(c/(jωr)) that produces the proximity effect, and with a diffraction lowpass for regions facing away (the body, or the player's head for the ears view). Setups: soundhole 15 cm, 12th fret 20 cm, lower bout, spaced pair, XY 40 cm, room pair at 2 m, behind the player, and the player's own ears. Preamp gain is normalized per setup.
+
+**Measured directivity.** Ackermann et al. (2024) recorded a classical guitar (Kohno 1985) played by a musician in TU Berlin's anechoic chamber with 32 microphones on a 2.06 m sphere ([data](https://doi.org/10.14279/depositonce-5861.3), CC BY-NC-SA 4.0). `proto/directivity.py` turns the third-octave file into octave-band levels per direction in the guitar's own coordinates (power average over the sphere = 0 dB); `test/directivity.js` renders this synth the same way (an omni mic at 2.06 m in each of the 32 directions, single notes across the range) and compares. The uncorrected model had the broad shape (pattern correlation 0.6–0.8) but was too uniform at 250–500 Hz (the player's body takes about 6 dB off the back; the model gave 2–3 dB) and 11 dB too dark behind the guitar at 8 kHz. Two uses of the data follow: room reflections leave the guitar with the measured pattern (keeping the model's split between its top-side and back-side feeds and its total radiated power), and each mic's direct sound gets the measured-minus-model difference in its direction, as a 7-band EQ faded in from 0.3 m to 1.2 m from the guitar (close mics keep the region geometry). The correction is averaged over the three bodies and spatially smoothed, so each body keeps its own fine high-frequency lobes. On a stand, directions toward where the player would be fall back to the model.
 
 **Rooms.** An image-source model (Allen & Berkley) with randomized higher-order images traces reflections up to the mixing time. Each reflection is attenuated per octave by each wall's absorption (and scattering), per ray by the direction it left the guitar (the top beams forward as frequency rises, the back radiates backward, the player absorbs) and by the mic's pattern in the arrival direction, and by air absorption (ISO 9613-1). A late tail follows with per-octave Eyring decay at energy rate 4πc/V (which integrates to Barron's 16π/A), so the direct-to-reverberant balance follows distance on its own. Tails at the two mics are coherent according to their spacing, following sin(kd)/kd. The result is two stereo impulse responses (for the top side and the back side) rendered in a worker and played through native convolvers. Room presets are calibrated to measured reverb times: booth 0.11 s, living room 0.56 s, bedroom 0.35 s, tiled bath 0.92 s, studio 0.53 s, recital hall 1.36 s, Boston-like hall 1.79 s, stone church 5.2 s, plus outdoors over grass.
 
@@ -49,6 +51,44 @@ Braces carry about half the low-mode stiffness. Each body mode is shifted by its
 - **Direction — pendulum model**: a strumming arm swings down and up every subdivision whether or not it touches the strings. The engine estimates the subdivision from your timing and sets each strum's direction by how many swings have passed. Quarter notes stay downstrokes; 8ths alternate.
 - **Fingerstyle**: thumb on the bass strings, fingers on the rest, plucked nearly together.
 - **Hand hold**: a released chord keeps ringing ~160 ms so strums connect; strings a new chord doesn't use are muted.
+
+### 4. The pick (`pickModel` in `src/modal.js`)
+
+A flat pick is a short cantilever held between thumb and finger. Each pick is specified by material (Young's modulus, density, loss factor, friction against the string, surface hardness), thickness, tip width, edge radius, and how much tip shows past the grip. For every pluck a quasi-static force balance finds where the string slips off:
+- The string pushes on the pick face with stiffness Ks = T·L/(x(L−x)). The pick bends (tip stiffness 3EI/ℓ³), tilting its face.
+- With the player's attack angle and the friction angle atan μ, the string slides toward the tip and leaves when it reaches it. That sets the release displacement (loudness) and direction (more perpendicular to the top for a flexing pick).
+- Release time is the edge radius divided by the slip speed, where the bent pick's recoil adds its component along the face. Standard picks are cut square and polished (edge ~0.15 mm whatever their thickness); bevelled picks are rounder.
+- Surface hardness (Hertz contact): the string dents the tip by dc = (9F²/(16 R E*²))^(1/3). Hard plastics dent ~10 µm; leather ~0.15 mm, rubber ~0.7 mm, felt ~1.5 mm. A soft tip takes up part of the pick's travel, lets go over the time the dent takes to unload, and touches a wider stretch of string. The tip hardness can be set on its own (Shore A/D scale).
+- The pick's own flap after release rings at its cantilever frequency and decays at its material's loss factor.
+
+Effects are taken relative to a medium celluloid pick, which keeps the engine's calibration to real strums. Predictions: thin and loosely held picks give up the string earlier (−2 to −7 dB) and push it more into the top; slick Delrin releases earlier than celluloid; thick and hard picks are louder (as Carral & Paset measured, 0.46 vs 2 mm). Bevelled, leather, rubber and felt picks are progressively darker. A thinner pick also passes through a strum faster. Only Carral & Paset have measured pick effects on a guitar, so these magnitudes are model predictions.
+
+### 5. The plucking hand (`src/hand.js`)
+
+Choose **Pattern**, a style and a tempo, and hold a chord: the right hand plays it the way a guitarist would. Fourteen styles: classical arpeggios (p-i-m-a-m-i, Giuliani p-i-m-i with a rest-stroke bass, planted p-i-m-a), tremolo (p-a-m-i), Travis picking, folk p-i-m-i, ballad pinch, bossa nova, bluegrass boom-chuck and crosspicking (flatpick), clawhammer, flamenco rumba, soleá compás (12 beats, rasgueado and golpe on 3, 6, 8, 10, 12) and alzapúa.
+
+- **Strings to fingers.** Roles come from the voicing: the root bass, an alternate bass (preferring the chord's 5th), the three highest chord strings. Fingers keep home strings (p on the bass, i/m/a on strings 3/2/1). Notes played over a running pattern are melody: they take a string of their own, the pattern leaves it alone, and the finger follows the classical crossing rules (alternate; i→m→a to a higher string, a→m→i to a lower one), with a rest stroke when the next string isn't needed.
+- **Timing**, two levels:
+  - A slow drift of the whole hand against the beat (AR(1), ρ 0.9). Heijink & Meulenbroek (2002) found most of professionals' 18–24 ms onset scatter was whole-pattern shifts.
+  - Note-to-note jitter SD = √(4² + (k·IOI)²) ms. At student skill this reproduces Nézio Malta's (2012) measured arpeggio (185 ± 16 ms against 184 ± 17 ms) and tremolo (100 ± 13 ms against 94–99 ± 20–25 ms).
+  - The ring finger is slightly late. Tremolo's gap before the thumb is longer for weaker players.
+- **Plucked chords** spread first-to-last ~10 ms (tight player) to ~25 ms (loose), in a fixed finger order per player (Nézio Malta 2012). Louder notes land a little earlier (Goebl 2001).
+- **Dynamics.** Per-pluck SD 1.9 dB (professional) to 3 dB (student). The middle finger is loudest and the ring finger weakest; the thumb is softer in accompaniment and louder where the bass is voiced. Accents are +3.5 dB and slightly early. A rest stroke is +2.5 dB and drives the string more perpendicular to the top. Nails touch 1–3 mm of string, flesh 8 mm.
+- **Limits.** The same finger repeats no sooner than 140–180 ms (thumb 110 ms); a finger pushed past that arrives late and softer. Finger independence falls above ~3 Hz and is lowest for the ring finger (Häger-Ross & Schieber 2000), raising stray contacts.
+- **Contacts.**
+  - A rest stroke lands on the next string toward the bass (toward the treble for the thumb) and damps it 20–40 ms later.
+  - A free-stroke follow-through occasionally grazes that string: a faint note, a brief damping if it is ringing, or a dead tick if muted.
+  - The ring finger is sometimes dragged along by the middle finger.
+  - In alternating-bass styles the thumb settles on the next string.
+  - Sequential planting mutes a string just before it is plucked.
+  - Rare slips: a miss, the neighbouring string instead, or a late soft note.
+  - Rates scale with skill and the *Stray contacts* control. No study has measured these rates on guitar, so they are estimates (about 0.3% of plucks for a professional, 3% for an amateur).
+- **Rasgueado.** The fingers flick out in turn (e-a-m-i). Each nail sweeps the strings in ~45 ms, and successive sweeps overlap across ~290 ms, as in Laurson, Välimäki & Penttinen's (2010) measurement. A sweep only skims a ringing string (~90% survives). Golpe is a half-sine force pulse into the top.
+- **Feel.**
+  - Swing shrinks toward straight as tempo rises (Friberg & Sundström 2002; Honing & de Haas 2008).
+  - Bluegrass pushes slightly ahead of the beat.
+  - Bossa off-beats come ~2.5% of a beat early (Brazilian microtiming, Gouyon 2007).
+- **Tempo** comes from the slider or from MIDI clock; MIDI Start realigns the pattern. Chord pads latch the pattern (tap the playing chord to stop), and the sustain pedal keeps it going after keys are released.
 
 ## Controls
 
@@ -86,9 +126,20 @@ The analyzer reports per-partial starting level and T60, inharmonicity, spectral
 - Paté, Le Carrou & Fabre (2014), "Predicting the decay time of solid body electric guitar tones," JASA.
 - Christensen & Vistisen (1980), simple model for low-frequency guitar function, JASA.
 - Freire, Armondes, Viana & Silva (2018), strumming microtiming on acoustic guitar, SMC.
+- Nézio Malta, L. (2012), *Regularidade e simultaneidade na técnica violonística de mão direita*, MA dissertation, UFMG (hexaphonic measurements of arpeggio, tremolo and block-chord timing and level).
+- Heijink & Meulenbroek (2002), on the complexity of classical guitar playing, J. Motor Behavior 34.
+- Häger-Ross & Schieber (2000), quantifying the independence of human finger movements, J. Neuroscience 20; Zatsiorsky, Li & Latash (2000), enslaving effects, Exp. Brain Res. 131; Aoki & Kinoshita (2001), Ergonomics.
+- Laurson, Välimäki & Penttinen (2010), simulating idiomatic playing styles in a classical guitar synthesizer: rasgueado, DAFx.
+- Goebl (2001), melody lead in piano performance, JASA 110; Maidhof et al. (2009), PLoS One (errors late and soft).
+- Wing & Kristofferson (1973), the timing of interresponse intervals; Vorberg & Wing (1996); Repp (2005), sensorimotor synchronization review.
+- Friberg & Sundström (2002), swing ratios and ensemble timing in jazz, Music Perception 19; Honing & de Haas (2008), Music Perception 25; Gouyon (2007), microtiming in samba de roda, SBCM.
+- Carral & Paset (2008), plectrum thickness and the radiated sound of the guitar, Acoustics'08; Perng, Smith & Rossing (2010), harpsichord plectrum–string interaction, DAFx; Chadefaux et al. (2012), harp plucking, JASA 131.
+- Niedt, D., choosing right-hand fingering (crossing rules); Werner, S., planting; Tennant, *Pumping Nylon*.
 - Pakarinen, Penttinen & Bank (2007), handling noises on wound strings, JASA-EL.
 - Carcagno, Bucknall, Woodhouse, Fritz & Plack (2018), effect of back wood choice on steel-string guitars, JASA.
 - Brémaud et al. (2012), vibrational properties of 98 woods; Stephens (2015), finish effects, Savart Journal; Hess (2013), Savart Journal.
 - Le Carrou, Paté & Chomette (2019), influence of the player on guitar dynamics, JASA.
+- Ackermann, Brinkmann, Zotter, Kob & Weinzierl (2024), "A database with directivities of musical instruments," JAES; data doi 10.14279/depositonce-5861.3.
+- Weinzierl, Vorländer et al. (2017), "A database of anechoic microphone array measurements of musical instruments," TU Berlin.
 - Allen & Berkley (1979), image method; De Sena et al. (2015), randomized image method; Barron & Lee (1988), energy relations; Wenmaekers et al. (2014), air absorption.
 - Hodgkinson, Timoney & Lazzarini (2010), tension-modulated steel-string partial tracks, DAFx.

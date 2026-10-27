@@ -92,6 +92,82 @@ const PRESETS = {
 };
 const STD = [40, 45, 50, 55, 59, 64];
 
+// ---------------- picks ----------------
+// A flat pick is a short cantilever held between thumb and index finger. Per pick: Young's modulus E (Pa), density
+// (kg/m3), loss factor eta, friction against the string mu, thickness t, effective width near the tip w, radius of
+// the edge the string slides over (standard picks are cut square and polished, ~0.15 mm whatever their thickness;
+// bevelled picks are rounder), and how much tip sticks out relative to normal.
+// Values: manufacturers' thicknesses; polymer data sheets (POM/Delrin, PA6/nylon, celluloid, PEI/Ultem); bone and
+// cupronickel handbooks; friction from polymer-on-steel tables. Felt bends little and instead compresses: it is given a
+// soft contact (minimum release time and contact width) and no click.
+const PICKS = {
+  nylon46:  { name: 'Nylon .46 (thin)',            E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 0.46e-3, w: 7e-3, edge: 0.15e-3, scrape: 1.0 },
+  cell71:   { name: 'Celluloid .71 (medium)',      E: 2.0e9, rho: 1350, eta: 0.030, mu: 0.35, t: 0.71e-3, w: 8e-3, edge: 0.15e-3, scrape: 1.0 },
+  delrin100:{ name: 'Delrin 1.0 (Tortex-style)',   E: 2.9e9, rho: 1410, eta: 0.012, mu: 0.20, t: 1.00e-3, w: 8e-3, edge: 0.15e-3, scrape: 0.7 },
+  ultem150: { name: 'Ultem 1.5 (heavy)',           E: 3.3e9, rho: 1270, eta: 0.006, mu: 0.28, t: 1.50e-3, w: 8e-3, edge: 0.18e-3, scrape: 0.8 },
+  jazz3:    { name: 'Nylon 1.38, small sharp tip', E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 1.38e-3, w: 5e-3, edge: 0.18e-3, scrape: 1.0, ell: 0.75 },
+  bone300:  { name: 'Bone 3 mm, bevelled',         E: 15e9,  rho: 1900, eta: 0.010, mu: 0.25, t: 3.00e-3, w: 9e-3, edge: 0.50e-3, scrape: 0.6 },
+  coin:     { name: 'Coin (milled edge)',          E: 110e9, rho: 8900, eta: 0.002, mu: 0.40, t: 1.40e-3, w: 9e-3, edge: 0.15e-3, scrape: 3.0 },
+  leather:  { name: 'Leather 2 mm',                E: 2.5e8, rho: 900,  eta: 0.150, mu: 0.50, t: 2.00e-3, w: 9e-3, edge: 0.80e-3, scrape: 0.2, Es: 4e7 },
+  rubber:   { name: 'Rubber 2.5 mm (soft)',        E: 2.0e7, rho: 1150, eta: 0.200, mu: 0.80, t: 2.50e-3, w: 9e-3, edge: 0.80e-3, scrape: 0.1, Es: 3.6e6 },
+  felt:     { name: 'Felt 3 mm',                   E: 6e7,   rho: 400,  eta: 0.300, mu: 0.60, t: 3.00e-3, w: 10e-3, edge: 1.50e-3, scrape: 0, Es: 1e6 }
+};
+// Surface hardness: the tip's surface modulus Es (Pa; defaults to E for solid plastics, bone and metal). Shore A
+// (soft) via Gent's relation, Shore D (hard plastics) from tabulated conversions; above Shore D ~90 the tip is as hard
+// as the material's bulk stiffness.
+const SHORE_D = [[40, 3e7], [50, 9e7], [60, 2.5e8], [70, 6e8], [80, 1.5e9], [85, 2.4e9], [90, 3.8e9]];
+function shoreToEs(scale, h) {
+  if (scale === 'A') return 1e6 * 0.0981 * (56 + 7.62336 * h) / (0.137505 * (254 - 2.54 * h));
+  for (let i = 1; i < SHORE_D.length; i++) if (h <= SHORE_D[i][0]) {
+    const [h0, e0] = SHORE_D[i - 1], [h1, e1] = SHORE_D[i], t = Math.max(0, (h - h0) / (h1 - h0));
+    return Math.exp(Math.log(e0) + t * (Math.log(e1) - Math.log(e0)));
+  }
+  return SHORE_D[SHORE_D.length - 1][1];
+}
+function esToShore(Es) {
+  if (Es > 4e9) return 'harder than Shore D 90';
+  if (Es >= 3e7) { let lo = 40, hi = 95; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (shoreToEs('D', m) < Es) lo = m; else hi = m; } return 'Shore D ' + Math.round(lo); }
+  let lo = 0, hi = 99; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (shoreToEs('A', m) < Es) lo = m; else hi = m; }
+  return 'Shore A ' + Math.round(lo);
+}
+const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip length beyond the fingers
+
+// Quasi-static release: the string (lateral stiffness Ks = T L / (x (L - x))) pushes on the pick face; the pick bends
+// (tip stiffness Kp = 3 E I / l^3, end slope 1.5 delta / l), tilting its face. With the player's attack angle psi0 and
+// friction angle atan(mu), the string is pushed at alpha = psi0 + phi - atan(mu) from the stroke direction and slides
+// toward the tip; it is released when it reaches the tip, which dips D0 past the string and rises along the stroke at
+// the escape angle beta. Release time = edge radius / slip speed (stroke speed + the bent pick's recoil).
+function pickModel(pk, T, L, xp, vel, angleDeg, grip, EsOverride) {
+  const Ks = T * L / (xp * (L - xp));
+  const ell = (GRIPS[grip] || GRIPS.normal) * (pk.ell || 1);
+  const I = pk.w * pk.t ** 3 / 12, Kp = 3 * pk.E * I / ell ** 3;
+  const D0 = (0.22 + 0.6 * vel) * 1e-3, beta = 8 * Math.PI / 180, psi0 = (angleDeg ?? 20) * Math.PI / 180, phiF = Math.atan(pk.mu);
+  let d = 0.002, delta = 0, phi = 0, alpha = 0;
+  for (let it = 0; it < 40; it++) {
+    delta = Ks * d / Kp;
+    phi = Math.min(0.75, 1.5 * delta / ell);
+    alpha = Math.max(0.06, psi0 + phi - phiF);
+    d = 0.5 * d + 0.5 * D0 / (Math.sin(alpha) + Math.cos(alpha) * Math.tan(beta));
+  }
+  const fp = 0.5596 * Math.sqrt(pk.E * pk.t * pk.t / (12 * pk.rho)) / (ell * ell);
+  // recoil of the bent pick is along the stroke; only its component along the face (sin of the face tilt) speeds the slip
+  const v = 0.4 + 1.8 * vel, vSnap = 0.5 * delta * 2 * Math.PI * fp * Math.sin(psi0 + phi);
+  // Hertz contact between the string (radius ~0.2 mm) and the edge, crossed cylinders ~ a sphere of radius sqrt(r R):
+  // the string presses a dent of depth dc = (9 F^2 / (16 R E*^2))^(1/3) into the tip. A soft tip (rubber, felt) takes
+  // up part of the pick's travel in the dent (less string displacement), lets go over the time it takes the dent to
+  // unload (longer, gentler release) and touches a wider stretch of string (fewer high harmonics). Hard tips: microns.
+  const Es = EsOverride || pk.Es || pk.E, Estar = Es / (1 - 0.45 * 0.45);
+  const R = Math.sqrt(2e-4 * pk.edge), F = Ks * d;
+  const dc = Math.min(0.6 * pk.t, Math.cbrt(9 * F * F / (16 * R * Estar * Estar)));
+  const aC = Math.sqrt(R * dc);
+  d = Math.max(0.25 * d, d - dc);
+  const tau = (pk.edge + dc) / (v + vSnap), width = 2 * pk.edge + 2 * aC + 2 * dc;
+  const area = pk.w * ell, hard = Math.min(1, Math.sqrt(Es / 1e9));
+  return { d, alpha, tau, width, fp, delta, Ks, Kp, dc, Es,
+    click: Es < 5e8 ? 0 : delta * fp * fp * area, decay: 1 / (Math.PI * fp * pk.eta), scrape: pk.mu * pk.scrape * hard, hard, hold: d / v };
+}
+const PICK_REF = { type: 'cell71', angle: 20, grip: 'normal' };
+
 function makeRng(seed) {
   let s = (seed >>> 0) || 1;
   return function () { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
@@ -344,7 +420,8 @@ class GuitarEngine {
       preset: 'dreadnought', tuning: STD.slice(), capo: 0, brightness: 0.55, body: 1.0, bodySize: 1.0,
       sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high',
       build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated', style: 'luthier' },
-      scene: { mics: 'fret12', hold: 'seated' }
+      scene: { mics: 'fret12', hold: 'seated' },
+      pick: { type: 'cell71', angle: 20, grip: 'normal' }
     };
     this.bend = 0; this.bendTarget = 0;
     this.RING = 16384; this.RMASK = this.RING - 1;
@@ -364,6 +441,7 @@ class GuitarEngine {
     this.mD = new Float64Array(14); this.mG = new Float64Array(14); this.mN = new Float64Array(14); this.mS = new Float64Array(14);
     this.mC = new Float64Array(14); this.mI = new Float64Array(14); this.mLP = new Float64Array(14); this.nm = 1;
     this.rhF = new Float64Array(8); this.feedF = 0; this.feedB = 0; this.sceneDirty = true;
+    this.eqC = new Float64Array(2 * 7 * 5); this.eqZ = new Float64Array(2 * 7 * 2); this.eqOn = false; // far-field directivity EQ per mic
     this.FY = []; this.FZ = []; for (let j = 0; j < 6; j++) { this.FY.push(new Float64Array(64)); this.FZ.push(new Float64Array(64)); }
     this.setPreset('dreadnought');
   }
@@ -373,7 +451,7 @@ class GuitarEngine {
     let rebuild = false, retune = false;
     for (const k in p) {
       if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality' || k === 'build') rebuild = true;
-      if (k === 'scene') this.sceneDirty = true;
+      if (k === 'scene' || k === 'build') this.sceneDirty = true;
       if (k === 'tuning' || k === 'capo' || k === 'brightness') retune = true;
       this.params[k] = p[k];
     }
@@ -541,6 +619,7 @@ class GuitarEngine {
 
   // ---------- events ----------
   post(ev) {
+    ev = Object.assign({}, ev);   // the queue annotates events; never touch the caller's object
     const at = ev.t == null ? this.clock : Math.max(this.clock, Math.round(ev.t * this.sr));
     ev._at = at;
     const q = this.queue; let i = q.length;
@@ -554,7 +633,10 @@ class GuitarEngine {
     const vel = Math.max(0.02, Math.min(1, ev.vel == null ? 0.7 : ev.vel));
     const pre = Math.round((style === 'pick' ? 0.0025 : 0.0012) * this.sr);
     const wound = this.P.strings[ev.s] && this.P.strings[ev.s].wound;
-    const amt = this.params.noise * vel * (style === 'pick' ? 0.12 : 0.04) * (wound ? 1 : 0.5);
+    let scr = 1;
+    if (style === 'pick') { const pc = Object.assign({}, PICK_REF, this.params.pick || {}, ev.pick || {}), pk = PICKS[pc.type] || PICKS.cell71;
+      scr = (pk.mu * pk.scrape) / (PICKS.cell71.mu * PICKS.cell71.scrape); }
+    const amt = this.params.noise * vel * (style === 'pick' ? 0.12 * Math.min(4, scr) : 0.04) * (wound ? 1 : 0.5);
     if (amt <= 0) return pre;
     const start = this.clock & this.RMASK;
     let p1 = 0, p2 = 0;
@@ -570,6 +652,9 @@ class GuitarEngine {
         if (!ev._staged) { ev._staged = true; const pre = this.preScrape(ev); if (pre > 0) { ev.t = null; ev._at = this.clock + pre; this.post2(ev); break; } }
         this.pluck(ev); break;
       case 'damp': this.dampString(ev); break;
+      case 'touch': this.touchString(ev); break;
+      case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
+      case 'tap': this.tap(ev); break;
       case 'squeak': this.squeak(ev); break;
       case 'bend': this.bendTarget = ev.value; break;
       case 'params': this.setParams(ev.params); break;
@@ -593,7 +678,8 @@ class GuitarEngine {
       this.loadModes(v, ev.s, midi);
     } else {
       // pick lands on a ringing string: it stops part of the motion
-      const kc = ev.style === 'pick' ? 0.62 - 0.32 * vel : 0.5 - 0.3 * vel;
+      // (a brief nail sweep, as in rasgueado, only skims it: ~90% of the motion survives; Laurson et al. 2010)
+      const kc = ev.keep ?? (ev.style === 'pick' ? 0.62 - 0.32 * vel : 0.5 - 0.3 * vel);
       for (let c = 0; c < v.n; c++) { v.y1[c] *= kc; v.y2[c] *= kc; }
     }
     s.midi = midi; s.fret = Math.round(midi - s.open);
@@ -611,13 +697,29 @@ class GuitarEngine {
     const L = v.L;
     const pickPos = (ev.pickPos == null ? 0.2 : ev.pickPos) * P.scale * (1 + (this.rng() - 0.5) * 0.06);
     const xp = Math.max(0.02 * L, Math.min(0.5 * L, pickPos));
-    const h = (0.0003 + 0.0032 * Math.pow(vel, 1.3)) * (ev.dead ? 0.5 : 1) * (style === 'thumb' ? 1.1 : 1);
+    let h = (0.0003 + 0.0032 * Math.pow(vel, 1.3)) * (ev.dead ? 0.5 : 1) * (style === 'thumb' ? 1.1 : 1);
     const br = this.params.brightness;
-    let tau, width, theta;
-    if (style === 'pick') { tau = 1.6e-4 * (1.5 - vel) * (1.3 - 0.6 * br); width = 0.0015; theta = 0.18 + 0.12 * this.rng(); }
+    let tau, width, theta, pm = null;
+    if (style === 'pick') {
+      tau = 1.6e-4 * (1.5 - vel) * (1.3 - 0.6 * br); width = 0.0015; theta = 0.18 + 0.12 * this.rng();
+      // the chosen pick relative to the calibrated reference (medium celluloid, normal grip, 20 degrees)
+      const pc = Object.assign({}, PICK_REF, this.params.pick || {}, ev.pick || {});
+      const pk = PICKS[pc.type] || PICKS.cell71, T = v.T;
+      pm = pickModel(pk, T, L, xp, vel, pc.angle, pc.grip, pc.Es || null);
+      const p0 = pickModel(PICKS.cell71, T, L, xp, vel, PICK_REF.angle, PICK_REF.grip);
+      pm.rel = { d: pm.d / p0.d, tau: pm.tau / p0.tau, width: pm.width / p0.width, alpha: pm.alpha - p0.alpha,
+        click: pm.click / p0.click, scrape: pm.scrape / p0.scrape, hard: pm.hard / p0.hard };
+      tau *= Math.min(12, Math.max(0.1, pm.rel.tau));
+      width *= pm.rel.width;
+      theta = Math.min(1.25, Math.max(0.04, theta + pm.rel.alpha));
+    }
     else if (style === 'thumb') { tau = 1.1e-3 * (1.4 - 0.6 * vel); width = 0.012; theta = 0.5 + 0.2 * this.rng(); }
     else { tau = 6e-4 * (1.4 - 0.6 * vel); width = 0.008; theta = 0.65 + 0.25 * this.rng(); }
-    if (this.params.preset === 'classical' && style !== 'pick') tau *= 0.5; // nails
+    if (style !== 'pick' && (ev.nail ?? this.params.preset === 'classical')) { tau *= 0.5; width = Math.min(width, 0.0025); } // nail: 1-3 mm contact
+    // rest stroke (apoyando): the finger pushes the string toward the top and stops on the next string, so more of
+    // the motion is perpendicular to the top (louder, shorter, rounder); a free stroke pulls it more along the top
+    if (ev.rest && style !== 'pick') theta = Math.min(1.35, theta + 0.4);
+    if (pm) h *= Math.min(2, Math.max(0.3, pm.rel.d));
     if (ev.bright != null) tau /= Math.max(0.2, ev.bright);
     if (ev.dead) tau *= 2;
     const ct = Math.cos(theta), st = Math.sin(theta);
@@ -645,7 +747,7 @@ class GuitarEngine {
     const Fs = v.T * h / xp * dir;
     this.staticZ -= Fs * st; this.staticY -= Fs * ct;
     // release click: pick or nail leaving the string, straight into the body
-    const nAmt = this.params.noise * vel * (style === 'pick' ? 0.45 : 0.15) * (ev.dead ? 2 : 1);
+    const nAmt = this.params.noise * vel * (style === 'pick' ? 0.45 * Math.min(4, pm ? Math.sqrt(pm.rel.scrape) * pm.rel.hard : 1) : 0.15) * (ev.dead ? 2 : 1);
     if (nAmt > 0) {
       const start = this.clock & this.RMASK, nl = Math.round(0.004 * sr);
       const wound = this.P.strings[ev.s].wound;
@@ -653,6 +755,16 @@ class GuitarEngine {
       for (let i = 0; i < nl; i++) {
         const r = this.rng() * 2 - 1, hp = r - 2 * p1 + p2; p2 = p1; p1 = r;
         this.bodyIn[(start + i) & this.RMASK] += hp * nAmt * Math.exp(-i / (0.0009 * sr)) * (wound ? 1 : 0.5);
+      }
+      // the pick's own flap as it springs back: a decaying ring at its cantilever frequency, heard through the air
+      if (pm && pm.click > 0) {
+        const f = Math.min(0.42 * sr, pm.fp), rel = Math.min(10, pm.rel.click);
+        const amp = this.params.noise * vel * 0.012 * rel, dec = Math.max(0.0004, Math.min(0.03, pm.decay));
+        const n2 = Math.min(this.RING - 64, Math.round(dec * 5 * sr)), w = TAU * f / sr, pan = (ev.s - 2.5) / 8;
+        for (let i = 0; i < n2; i++) {
+          const val = amp * Math.sin(w * i) * Math.exp(-i / (dec * sr)) * Math.min(1, i / 6);
+          this.dirL[(start + i) & this.RMASK] += val * (1 - pan); this.dirR[(start + i) & this.RMASK] += val * (1 + pan);
+        }
       }
     }
   }
@@ -684,6 +796,31 @@ class GuitarEngine {
       if (y1 * y1 + y2 * y2 > 2e-15) v.act[n++] = c;
     }
     v.nact = n;
+  }
+
+  // A finger (or palm) touching a string for a moment: planting before a pluck, a rest stroke landing on its
+  // neighbour, an accidental graze. Damping for `dur` seconds, then the finger leaves; a soft contact noise.
+  touchString(ev) {
+    const s = this.strings[ev.s]; if (!s) return;
+    const amt = ev.amt == null ? 30 : ev.amt, dur = ev.dur == null ? 0.08 : ev.dur;
+    s.touchId = (s.touchId || 0) + 1;
+    for (const v of s.voices) { v.extraTarget = Math.max(v.extraTarget, amt); v.extraRate = 0.6; }
+    this.post2({ type: 'untouch', s: ev.s, id: s.touchId, _at: this.clock + Math.round(dur * this.sr), _staged: true });
+    const na = this.params.noise * 0.02 * Math.min(1, s.env * 10 + 0.15) * (ev.nail ? 1.6 : 1);
+    if (na > 1e-4) {
+      const at = this.clock & this.RMASK; let p = 0;
+      for (let k = 0; k < 240; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * na * Math.exp(-k / 50); p = r; }
+    }
+  }
+
+  // Golpe: a finger or nail tapping the top near the bridge. A half-sine force pulse into the body (flesh ~4 ms,
+  // nail ~1.5 ms with a click), so the body's own modes ring.
+  tap(ev) {
+    const sr = this.sr, vel = Math.max(0.05, Math.min(1, ev.vel ?? 0.7));
+    const dur = (ev.nail ? 0.0015 : 0.004) * (1.2 - 0.4 * vel), n = Math.max(4, Math.round(dur * sr));
+    const F = (ev.amt ?? 1) * 1.2 * vel, at = this.clock & this.RMASK;
+    for (let k = 0; k < n; k++) this.bodyIn[(at + k) & this.RMASK] += F * Math.sin(Math.PI * (k + 0.5) / n);
+    if (ev.nail) { let p = 0; for (let k = 0; k < 120; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * 0.08 * vel * Math.exp(-k / 25); p = r; } }
   }
 
   dampString(ev) {
@@ -899,6 +1036,21 @@ class GuitarEngine {
         r[1] = r[0]; r[0] = L; r[3] = r[2]; r[2] = yl; L = yl;
         const yr = this.rhb0 * R + this.rhb1 * r[4] + this.rhb2 * r[5] - this.rha1 * r[6] - this.rha2 * r[7];
         r[5] = r[4]; r[4] = R; r[7] = r[6]; r[6] = yr; R = yr; }
+      if (this.eqOn) {
+        // measured far-field directivity correction (transposed direct form II biquads)
+        const c = this.eqC, z = this.eqZ;
+        for (let ch = 0; ch < 2; ch++) {
+          let x = ch === 0 ? L : R;
+          for (let q = 0; q < 7; q++) {
+            const o = (ch * 7 + q) * 5, zo = (ch * 7 + q) * 2;
+            const y = c[o] * x + z[zo];
+            z[zo] = c[o + 1] * x - c[o + 3] * y + z[zo + 1];
+            z[zo + 1] = c[o + 2] * x - c[o + 4] * y;
+            x = y;
+          }
+          if (ch === 0) L = x; else R = x;
+        }
+      }
       this.airL = this.airC * this.airL + (1 - this.airC) * L;
       this.airR = this.airC * this.airR + (1 - this.airC) * R;
       L = this.airL + this.dirL[tIdx]; R = this.airR + this.dirR[tIdx];
@@ -939,12 +1091,23 @@ class GuitarEngine {
       this.mS[j] = c.shadow;
       this.mC[j] = 1 - Math.exp(-TAU * (ears ? 1400 : 380) / this.sr);
     }
+    // far-field correction toward the measured directivity of a played guitar (AcousticSpace.directEQ)
+    this.eqOn = false;
+    if (S && S.directEQ) {
+      const eq = S.directEQ(sc);
+      for (let ch = 0; ch < 2; ch++) {
+        const g = eq[Math.min(ch, eq.length - 1)];
+        if (g.some(x => Math.abs(x) > 0.05)) this.eqOn = true;
+        const cs = S.designEQ(g, this.sr);
+        for (let q = 0; q < 7; q++) for (let k = 0; k < 5; k++) this.eqC[(ch * 7 + q) * 5 + k] = cs[q][k];
+      }
+    }
   }
 
   panicReset() {
     for (const s of this.strings) for (const v of s.voices) { v.y1.fill(0); v.y2.fill(0); v.nact = 0; }
     this.body.reset(); this.staticZ = this.staticY = 0; this.radL = this.radR = this.radXL = this.radXR = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
-    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0);
+    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0); this.eqZ.fill(0);
   }
 
   meters() {
@@ -956,6 +1119,10 @@ root.GuitarEngine = GuitarEngine;
 root.GUITAR_PRESETS = PRESETS;
 root.GUITAR_WOODS = WOODS;
 root.GUITAR_HOLDS = HOLDS;
+root.GUITAR_PICKS = PICKS;
+root.GUITAR_GRIPS = GRIPS;
+root.guitarPickModel = pickModel;
+root.guitarShore = { toEs: shoreToEs, fromEs: esToShore };
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {
   class GuitarProcessor extends AudioWorkletProcessor {

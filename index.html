@@ -133,6 +133,7 @@ select { background: var(--panel-2); border: 1px solid var(--line); border-radiu
 .rec-out a { color: var(--accent); }
 #roomMap { width: 100%; height: 230px; display: block; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); touch-action: none; cursor: grab; }
 .space-group { grid-column: span 1; }
+.sub-ctl { display: flex; flex-direction: column; gap: 12px; padding: 10px 0 2px 12px; border-left: 2px solid var(--line); }
 .science { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .science p { margin: 0 0 8px; max-width: 72ch; }
 .science b { color: var(--fg); font-weight: 600; }
@@ -197,9 +198,20 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
     <div class="group">
       <h2>Hand</h2>
       <p class="hint">How the notes you play become a guitarist's motion.</p>
-      <div class="row wide"><label>Technique</label><div class="seg" data-opt="mode"><button data-v="pick">Pick strum</button><button data-v="finger">Fingerstyle</button></div></div>
+      <div class="row wide"><label>Technique</label><div class="seg" data-opt="mode"><button data-v="pick">Pick strum</button><button data-v="finger">Fingerstyle</button><button data-v="pattern">Pattern</button></div></div>
+      <div id="patternCtl" class="sub-ctl">
+        <div class="row wide"><label for="handStyle">Style</label><select id="handStyle"></select></div>
+        <div class="row"><label for="bpm">Tempo</label><input id="bpm" type="range" min="40" max="220" value="96"><output id="bpmOut">96</output></div>
+        <div class="row"><label for="skill">Player skill</label><input id="skill" type="range" min="0" max="100" value="60"><output id="skillOut">60</output></div>
+        <div class="row"><label for="brushes">Stray contacts</label><input id="brushes" type="range" min="0" max="200" value="100"><output id="brushesOut">100%</output></div>
+        <p class="note">Hold a chord and the right hand plays the style. The tempo follows MIDI clock when one is sent. The sustain pedal keeps the pattern going after you let go.</p>
+      </div>
       <div class="row wide"><label>Voicing</label><div class="seg" data-opt="voicing"><button data-v="played">As played</button><button data-v="guitarize">Guitar shape</button></div></div>
       <div class="row wide"><label>Direction</label><div class="seg" data-opt="direction"><button data-v="auto">Auto</button><button data-v="down">Down</button><button data-v="up">Up</button><button data-v="alternate">Alternate</button></div></div>
+      <div class="row wide"><label for="pickType">Pick</label><select id="pickType"></select></div>
+      <div class="row wide"><label for="grip">Grip</label><select id="grip"><option value="tight">Tight (little tip showing)</option><option value="normal">Normal</option><option value="loose">Loose (lots of tip)</option></select></div>
+      <div class="row"><label for="pickHard">Tip hardness</label><input id="pickHard" type="range" min="0" max="100" value="60"><output id="pickHardOut">—</output></div>
+      <div class="row"><label for="pickAngle">Pick angle</label><input id="pickAngle" type="range" min="0" max="45" step="1" value="20"><output id="pickAngleOut">20°</output></div>
       <div class="row"><label for="speed">Stroke time</label><input id="speed" type="range" min="15" max="110" step="1" value="55"><output id="speedOut">55 ms</output></div>
       <div class="row"><label for="humanize">Humanize</label><input id="humanize" type="range" min="0" max="100" value="60"><output id="humanizeOut">60</output></div>
       <div class="row"><label for="updepth">Upstroke reach</label><input id="updepth" type="range" min="0" max="100" value="55"><output id="updepthOut">55</output></div>
@@ -276,7 +288,10 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <p><b>Wood.</b> Each species enters as measured density, stiffness along and across the grain, and internal damping. What that does to the sound depends on how the guitar is built: a luthier thins each plate to the same stiffness, so a lighter wood mostly makes the top lighter; a factory keeps thickness fixed, so stiffness and mass both change. Every body mode is shifted by its share of top and back motion. The effects are real but small, as blind tests of tonewoods have found: a few percent in mode frequency, one to three decibels in level.</p>
       <p><b>The player.</b> Held against the torso, the back can't ring freely: back-plate modes lose about half their Q, the air and top resonances about a quarter, and the player's body absorbs what the back radiates. On a stand, the back sings.</p>
       <p><b>Microphones.</b> The guitar radiates from several places at once: the soundhole, the bridge, the two halves of the lower bout, below the bridge, the upper bout and the back. Each body mode drives them in its own pattern (the air mode through the soundhole, dipole modes with halves in opposite phase). Each mic hears every region at its true distance and angle, through its polar pattern, with the bass boost directional mics get up close, and with regions on the far side of the body heard only by diffraction.</p>
-      <p><b>The room.</b> Reflections are traced by the image-source method: each wall bounce is attenuated per octave by its material, per ray by the direction it left the guitar (the top radiates forward, the back backward, the player absorbs) and by the direction it reaches the mic. A late tail follows, decaying per octave at the Eyring rate for the room's volume and surfaces, at the energy level room acoustics predicts, so moving the mics away naturally trades direct sound for room sound.</p>
+      <p><b>Measured directivity.</b> Close up, that geometry decides the sound. From a metre or more away, what you hear is set by how the whole instrument, and the person holding it, beams sound. That pattern comes from a real guitar played by a musician in an anechoic chamber, recorded from 32 directions at 2 m (Ackermann et al., TU Berlin). The synth was measured the same way and compared. The fix-ups it needed: the player's body takes about 6 dB off everything behind them from 250 Hz up, and the back of a real guitar is brighter than a simple shadow model. Distant mics, and every reflection that leaves the guitar into the room, now follow the measured pattern; close mics keep the geometry. Try “Behind the player”.</p>
+      <p><b>The pick.</b> A pick is a little cantilever. For every pluck the synth works out where the string slips off its tip, from the pick's stiffness, its friction against the string, your attack angle and grip. That gives how far the string was pushed (loudness), which way (a flexing pick pushes it more into the top), and how fast it let go (brightness). Tip hardness is Hertz contact: a rubber or felt tip dents where it presses the string, so it touches more of it and lets go gently.</p>
+      <p><b>The plucking hand.</b> In Pattern mode the hand plays the style the way a guitarist's fingers would. The thumb keeps the bass and the fingers their home strings. Timing has a slow drift of the whole hand plus a little scatter per note, matched to hexaphonic measurements of guitarists. Plucked chords spread over 10–25 ms in each player's habitual order. The ring finger is weakest and slightly late. Rest strokes land on the next string and damp it, and a careless follow-through sometimes grazes a neighbour. Rasgueado fans four nail sweeps over about 0.3 s. Lower the skill to hear a beginner.</p>
+      <p><b>The room.</b> Reflections are traced by the image-source method: each wall bounce is attenuated per octave by its material, per ray by the direction it left the guitar (the measured pattern of a guitar in a player's arms) and by the direction it reaches the mic. A late tail follows, decaying per octave at the Eyring rate for the room's volume and surfaces, at the energy level room acoustics predicts, so moving the mics away naturally trades direct sound for room sound.</p>
       <p><b>Calibration.</b> Decay per harmonic, inharmonicity, brightness over time, beating depth, and strum timing and brightness were measured from recordings of real steel-string guitars, single notes and labeled down and up strums, and the model was checked against them.</p>
       <p><b>Hand.</b> Notes that arrive together become a chord, placed on the neck with a fingering search (span, barres, open strings, voice leading). A downstroke crosses the strings in about 35–55 ms, as measured strums do; upstrokes are quicker, catch mostly the treble strings, and come out slightly brighter. Direction follows a pendulum: the hand swings every subdivision, so the gap since your last chord decides down or up.</p>
     </details>
@@ -376,7 +391,8 @@ const MIC_SETUPS = {
   spaced:   { name: 'Spaced pair: 12th fret + lower bout', mics: [{ p: [0.33, 0.04, 0.22], aim: [0.30, 0, 0], pattern: 'cardioid' }, { p: [-0.08, 0.10, 0.28], aim: [-0.04, 0.06, 0], pattern: 'cardioid' }] },
   xy40:     { name: 'XY pair, 40 cm', mics: 'xy', center: [0.20, 0.0, 0.40], aim: [0.17, 0, 0], pattern: 'cardioid', spread: 45 },
   room2m:   { name: 'Room pair, 2 m', mics: [{ p: [0.10, -0.4, 2.0], aim: [0.1, 0, 0], pattern: 'omni' }, { p: [0.10, 0.4, 2.0], aim: [0.1, 0, 0], pattern: 'omni' }] },
-  ears:     { name: "Player's ears", mics: 'ears', head: [0.12, 0.40, 0.06] }
+  ears:     { name: "Player's ears", mics: 'ears', head: [0.12, 0.40, 0.06] },
+  behind:   { name: 'Behind the player, 1.3 m', mics: [{ p: [0.25, -0.15, -1.3], aim: [0.1, 0, -0.05], pattern: 'omni' }, { p: [-0.05, 0.15, -1.3], aim: [0.1, 0, -0.05], pattern: 'omni' }] }
 };
 
 // ---------------- small vector helpers ----------------
@@ -437,19 +453,69 @@ function scaledSetup(key, dist, pattern) {
   return { name: s.name, mics: s.mics.map(m => ({ p: add(m.aim, scl(sub(m.p, m.aim), d)), aim: m.aim, pattern: pat(m.pattern) })) };
 }
 
-// ---------------- guitar source directivity (for room reflections) ----------------
-// Front (top + soundhole) source: omnidirectional at low frequency, beaming forward as frequency rises; back source the
-// mirror image. When the guitar is held, the player's body absorbs much of what leaves backward.
-const BEAM = [0.0, 0.1, 0.35, 0.8, 1.3, 1.8, 2.3];
-function sourceGain(side, uLocal, band, held) {
-  const facing = side === 'front' ? uLocal[2] : -uLocal[2];
-  let g = Math.pow((1 + facing) / 2 + 0.02, BEAM[band]);
-  if (held) {
-    // rays leaving toward the player (local -z for the top side, behind the back) hit clothing and torso
-    const towardPlayer = -uLocal[2];
-    if (towardPlayer > 0) g *= 1 - towardPlayer * (0.25 + 0.1 * band) ;
+// ---------------- measured directivity of a guitar held by a player ----------------
+// Ackermann, Brinkmann, Zotter, Kob & Weinzierl (2024), "A database with directivities of musical instruments", JAES;
+// data doi 10.14279/depositonce-5861.3 (CC BY-NC-SA 4.0): a classical guitar played seated in an anechoic chamber,
+// 32 directions at 2.06 m. MEAS: octave-band level per direction (guitar-local unit vectors), power average over the
+// sphere = 0 dB. CORR: measured minus this synth's own pattern rendered the same way (test/directivity.js), applied to
+// distant mics. BACKFEED: power of the engine's back-side room feed relative to its top-side feed, per octave.
+// Regenerate with: python3 -I proto/directivity.py <sofa> data/guitar_directivity_measured.json;
+//                  node test/directivity.js classical seated --write
+// <directivity-data>
+const DIR = {"dirs":[[0.7411,0.5118,0.4345],[0.6181,-0.1006,0.7796],[0.704,-0.6361,0.3159],[-0.0629,-0.1005,0.9929],[0.0761,-0.9671,0.2426],[-0.3979,-0.6361,0.661],[0.968,-0.0565,0.2445],[0.2358,-0.6143,0.753],[0.9029,0.3547,-0.2426],[0.88,-0.3547,-0.3159],[0.3609,-0.5118,-0.7796],[-0.136,-0.8903,-0.4345],[0.529,0.8457,-0.0698],[0.6556,0.0567,-0.753],[0.4743,-0.8457,-0.2445],[-0.529,-0.8457,0.0698],[0.3979,0.6361,-0.661],[-0.0761,0.9671,-0.2426],[0.0629,0.1005,-0.9929],[-0.704,0.6361,-0.3159],[-0.6181,0.1006,-0.7796],[-0.7411,-0.5118,-0.4345],[-0.2358,0.6143,-0.753],[-0.2697,-0.4312,-0.861],[0.136,0.8903,0.4345],[-0.3609,0.5118,0.7796],[-0.88,0.3547,0.3159],[-0.9029,-0.3547,0.2426],[0.2697,0.4312,0.861],[-0.4743,0.8457,0.2445],[-0.968,0.0565,-0.2445],[-0.6556,-0.0567,0.753]],"db":[[0.17,-0.65,1.17,1.59,2.36,2.14,2.48],[1.16,1.54,1.49,2.15,2.37,2,-0.5],[0.14,-0.56,-0.59,-1.75,-1.77,-0.33,3.54],[2.21,4.24,4.39,4.53,2.46,2.24,-0.21],[-0.44,0.03,0.67,-2.22,-0.97,-3.37,-5.62],[0.93,2.38,2.57,5.43,3.22,4.19,-0.13],[1.2,-0.87,1.65,0.99,2.73,5.36,6.05],[1.1,1.89,0.31,1.28,3.34,1.3,2.29],[-1.31,-4.38,-2.4,-4.9,-1.85,-0.8,1.55],[-0.55,-3.39,-0.43,-2.85,-2.73,-1.61,-4.7],[-1.9,-4.45,-4.9,-6.45,-5.36,-4.03,-7.86],[-1.52,-3.61,-3.62,-7.89,-1.66,-6.74,-3.99],[-1.06,-2.36,-1.89,-1.2,-2.41,-3.48,-3.65],[-2.73,-6.17,-5.35,-8.11,-4.8,-7.19,-3.97],[-1.06,-2.16,-1.32,-2.96,-4.07,-3.17,-5.82],[-1.04,-1.36,-3.29,-1.6,-2.1,-0.21,-2.64],[-0.64,-3.6,-3.14,-5.05,-5.94,-7.93,-8.53],[-0.06,-0.69,-1.4,-2.25,-1.41,-4.92,-2.67],[-1.41,-3.48,-6.06,-6.63,-5.35,-9.18,-11.28],[-0.37,-0.74,-2.06,-0.42,-1.02,-3.02,-4.72],[1.82,-1.81,-5.1,-4,-4.18,-5.21,-5.04],[0.53,-3.96,-2.37,-4.5,-3.17,-3.19,-2.75],[-1.7,-3.94,-4.18,-5.58,-4.01,-5.98,-7.49],[-1.8,-5.09,-9.38,-7,-9.94,-10.93,-10.68],[1.3,2.47,3.21,2.37,2.76,0.26,2.39],[1.54,4.13,3.86,4.26,1.45,2.93,1.14],[-0.64,1.56,-0.64,2.02,1.58,3.23,7.43],[-0.83,0.53,-0.61,-2.17,-0.02,-3.08,-3.15],[0.07,1.72,3.04,0.98,1.03,0.42,-2.24],[0.02,1.73,1.09,1.62,-0.16,3.89,0.25],[0.57,-0.26,-1.68,-2.43,-1.03,-1.43,-4],[0.81,3.14,3.03,3.35,4.75,3.2,2.68]],"corr":[[0.06,-0.66,-0.66,-0.02,-0.12,0.97,-0.95],[0.86,1.06,-0.64,-1.74,-0.2,-1.34,-2.28],[0.16,-0.61,-1.34,-4.79,-4.29,-2.51,0.75],[1.55,3.02,2.26,2.28,-0.07,-1.18,-3.76],[-0.26,-0.16,1.99,-2.14,-2.41,-5.5,-8.51],[0.23,1.03,1.22,4.04,-0.03,0.46,-3.63],[1.25,-0.46,0.46,-1.29,1.75,4.07,4.81],[0.81,1.11,-0.68,0.55,-0.32,-1.29,-0.72],[-0.64,-2.82,-0.43,-0.55,5.76,8.33,12.77],[0.09,-1.97,1.55,1.04,3.74,8.77,6.7],[-1.15,-3.33,-2.37,-0.15,1.45,4.66,4.02],[-0.8,-2.71,0.25,-2.5,5.15,1.87,7.93],[-0.3,-0.91,0.49,4.3,2.17,0.73,1.6],[-2.05,-4.86,-3.62,-3.24,2.7,1.15,8.52],[-0.22,-0.87,2.27,3.26,3.38,7.5,6.26],[-1.04,-1.57,-1.48,2.08,-0.62,0.46,-1.05],[0.15,-2.18,-0.47,0.45,2.2,1.24,3.92],[0.68,0.61,1.91,1.72,5.03,3.28,8.65],[-0.78,-2.57,-3.87,-1.66,2.08,-1.44,0.02],[-0.25,-0.26,-0.28,5.15,5.23,5.48,6.6],[2,-1.47,-3.31,0.2,3.12,4.25,6.7],[0.61,-3.78,0,0.06,3.75,4.5,8.7],[-1.13,-3.01,-1.56,-0.83,3.51,2.82,4.49],[-1.29,-4.46,-6.78,-2.67,-2.51,-2.49,1.38],[1.19,2.23,2.5,-0.33,-0.73,-3.19,-0.1],[0.77,2.95,1.7,3.32,-1.2,-0.08,-3.3],[-1.89,-0.07,-3.69,-0.33,-1.28,-0.33,5.16],[-1.89,-0.97,-2.7,-4.06,-0.85,-5.32,-5.02],[-0.3,1.07,1.28,-1.23,-1.18,-1.68,-4.68],[-0.35,1.25,0.19,1.66,-2.29,2.9,-1.96],[0.25,-0.38,-0.47,1.05,5.97,8.83,7.84],[-0.34,1.42,0.09,-0.03,1.89,0.19,-0.93]],"backFeed":[0.00904,0.0629,0.209,0.174,0.283,0.282,0.123]};
+// </directivity-data>
+
+// smooth interpolation over the 32 measured directions (von Mises-Fisher kernel), in dB. The measured pattern uses a
+// ~25 deg kernel; the correction a ~45 deg one, so it fixes broad trends and leaves each body's own fine lobes.
+const KAPPA_CORR = 4;
+function dirInterp(table, u, kappa) {
+  const KAPPA = kappa || 12;
+  const l = len(u) || 1, x = u[0] / l, y = u[1] / l, z = u[2] / l;
+  const out = [0, 0, 0, 0, 0, 0, 0]; let ws = 0;
+  for (let j = 0; j < DIR.dirs.length; j++) {
+    const d = DIR.dirs[j], w = Math.exp(KAPPA * (x * d[0] + y * d[1] + z * d[2] - 1));
+    ws += w; const t = table[j]; for (let b = 0; b < 7; b++) out[b] += w * t[b];
   }
-  return Math.max(0, g);
+  for (let b = 0; b < 7; b++) out[b] /= ws;
+  return out;
+}
+// The measurement includes the player's body. With the guitar on a stand, directions behind the top (toward where the
+// player would be) fall back to the synth's own pattern.
+function playerWeight(u, held) { return held ? 1 : Math.min(1, Math.max(0, (u[2] / (len(u) || 1) + 0.25) / 0.5)); }
+
+// ---------------- guitar source directivity (for room reflections) ----------------
+// Model shape: the top side is omnidirectional at low frequency and beams forward as frequency rises; the back side is
+// the mirror image. The total in each direction is then set to the measured balloon, keeping the model's split
+// between the two feeds (so rays leaving backward still carry the back plate's sound) and its total radiated power.
+const BEAM = [0.0, 0.1, 0.35, 0.8, 1.3, 1.8, 2.3];
+function beamGain(side, u, band) {
+  const facing = side === 'front' ? u[2] : -u[2];
+  return Math.max(0, Math.pow((1 + facing) / 2 + 0.02, BEAM[band]));
+}
+const FIB = (() => { const n = 400, p = []; for (let i = 0; i < n; i++) { const z = 1 - 2 * (i + 0.5) / n, r = Math.sqrt(1 - z * z), t = Math.PI * (1 + Math.sqrt(5)) * i; p.push([r * Math.cos(t), r * Math.sin(t), z]); } return p; })();
+const srcCache = {};
+function srcNorm(held, band) {
+  const key = (held ? 'h' : 's') + band;
+  if (srcCache[key]) return srcCache[key];
+  const rho = DIR ? DIR.backFeed[band] : 1;
+  let mAvg = 0; for (const u of FIB) mAvg += beamGain('front', u, band) ** 2 + rho * beamGain('back', u, band) ** 2;
+  mAvg /= FIB.length;
+  // power-preserving scale for the measured-shape gains
+  let p = 0; for (const u of FIB) { const t = shapeFactor(u, band, held, mAvg, rho); p += t * t * (beamGain('front', u, band) ** 2 + rho * beamGain('back', u, band) ** 2); }
+  p /= FIB.length;
+  return (srcCache[key] = { mAvg, rho, k: Math.sqrt(mAvg / p) });
+}
+function shapeFactor(u, band, held, mAvg, rho) {
+  const M = beamGain('front', u, band) ** 2 + rho * beamGain('back', u, band) ** 2;
+  const modelDb = 10 * Math.log10(Math.max(1e-9, M / mAvg));
+  const w = playerWeight(u, held);
+  const targetDb = w * dirInterp(DIR.db, u)[band] + (1 - w) * modelDb;
+  return Math.pow(10, (targetDb - modelDb) / 20);
+}
+function sourceGain(side, uLocal, band, held, raw) {
+  if (!DIR || raw) return beamGain(side, uLocal, band);
+  const N = srcNorm(held, band);
+  return beamGain(side, uLocal, band) * shapeFactor(uLocal, band, held, N.mAvg, N.rho) * N.k;
 }
 
 // mic sensitivity for a wave arriving from unit direction `from` (pointing from the mic toward the source)
@@ -494,6 +560,58 @@ function directCoefs(scene, sr) {
     }
     return { delay: d / C * sr, gP: g * A, gB: g * B, gNear: g * B * C / d, shadow, d };
   }));
+}
+
+// Far-field correction of the direct sound: the region model is right where geometry dominates (a mic a hand's width
+// from the soundhole), the measurement is right at a distance (it includes the player's body and the real diffraction
+// around the instrument). Each mic gets the measured-minus-model difference in its direction, faded in between 0.3 m
+// and 1.2 m from the guitar's acoustic centre. Returns per-mic octave-band gains in dB (125 Hz .. 8 kHz).
+const ACOUSTIC_CENTER = [0.10, 0, -0.05]; // between top and back, between soundhole and bridge
+function directEQ(scene) {
+  const mics = expandMics(scene.mics, scene.scale || 0.645), held = scene.hold !== 'stand';
+  return mics.map(m => {
+    if (!DIR || scene.rawRadiation) return [0, 0, 0, 0, 0, 0, 0];
+    const v = sub(m.p, ACOUSTIC_CENTER), d = len(v);
+    const t = Math.min(1, Math.max(0, (d - 0.3) / 0.9)), fade = t * t * (3 - 2 * t);
+    const w = playerWeight(v, held) * fade;
+    return dirInterp(DIR.corr, v, KAPPA_CORR).map(x => Math.max(-12, Math.min(12, x * w)));
+  });
+}
+
+// Graphic EQ for those octave gains: low shelf (125), five peaking filters (250..4k, one octave wide), high shelf (8k),
+// RBJ cookbook biquads. The bands overlap, so the requested gains are refined until the realized response at the
+// band centres matches.
+function biquad(type, f, gDb, sr) {
+  const A = Math.pow(10, gDb / 40), w = 2 * Math.PI * f / sr, cs = Math.cos(w), sn = Math.sin(w);
+  let b0, b1, b2, a0, a1, a2;
+  if (type === 'peak') {
+    const al = sn * Math.sinh(Math.LN2 / 2 * 1.0 * w / sn);
+    b0 = 1 + al * A; b1 = -2 * cs; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cs; a2 = 1 - al / A;
+  } else {
+    const al = sn / 2 * Math.SQRT2, sA = 2 * Math.sqrt(A) * al, s = type === 'low' ? 1 : -1;
+    b0 = A * ((A + 1) - s * (A - 1) * cs + sA); b1 = s * 2 * A * ((A - 1) - s * (A + 1) * cs); b2 = A * ((A + 1) - s * (A - 1) * cs - sA);
+    a0 = (A + 1) + s * (A - 1) * cs + sA; a1 = -s * 2 * ((A - 1) + s * (A + 1) * cs); a2 = (A + 1) + s * (A - 1) * cs - sA;
+  }
+  return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+}
+function biquadDb(c, f, sr) {
+  const w = 2 * Math.PI * f / sr, c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+  const nr = c[0] + c[1] * c1 + c[2] * c2, ni = -(c[1] * s1 + c[2] * s2);
+  const dr = 1 + c[3] * c1 + c[4] * c2, di = -(c[3] * s1 + c[4] * s2);
+  return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+function designEQ(gDb, sr) {
+  const fc = BANDS, types = ['low', 'peak', 'peak', 'peak', 'peak', 'peak', 'high'];
+  const edge = (b) => b === 0 ? 177 : b === 6 ? 5657 : fc[b];
+  let req = gDb.slice(), cs = [];
+  for (let it = 0; it < 6; it++) {
+    cs = req.map((g, b) => biquad(types[b], edge(b), g, sr));
+    for (let b = 0; b < 7; b++) {
+      let got = 0; for (const c of cs) got += biquadDb(c, fc[b], sr);
+      req[b] += 0.8 * (gDb[b] - got);
+    }
+  }
+  return cs;
 }
 
 // "Preamp gain": normalize each setup by its mics' mean distance to the guitar's regions, as an engineer would
@@ -637,7 +755,7 @@ function buildIRs(scene, sr) {
         for (let b = 0; b < 7; b++) {
           let a = spec / d * Math.exp(-AIR_M[b] * d / 2);
           for (const k in cnt) if (cnt[k]) a *= Math.pow(beta[k][b], cnt[k]);
-          a *= sourceGain(side, depLocal, b, held);
+          a *= sourceGain(side, depLocal, b, held, scene.rawRadiation);
           a *= micGain({ ...M, axis: micAx }, arrLocal, b);
           g[b] = a;
         }
@@ -670,7 +788,7 @@ function buildIRs(scene, sr) {
     // fraction of the source's power going into this side's directions (diffuse-field weighting)
     const sidePow = []; for (let b = 0; b < 7; b++) {
       let sp = 0, n = 0;
-      for (let k = 0; k < 64; k++) { const z = -1 + (k + 0.5) / 32; sp += Math.pow(sourceGain(side, [0, 0, z], b, held), 2); n++; }
+      for (const u of FIB) { sp += Math.pow(sourceGain(side, u, b, held, scene.rawRadiation), 2); n++; }
       sidePow.push(sp / n);
     }
     const nm = Math.min(2, mics.length);
@@ -725,7 +843,7 @@ function buildIRsNormalized(scene, sr) {
   return out;
 }
 
-root.AcousticSpace = { BANDS, MATERIALS, ROOMS, PATTERNS, REGIONS, MIC_SETUPS, AIR_M, expandMics, placement, directCoefs, buildIRs: buildIRsNormalized, buildIRsRaw: buildIRs, micNorm, scaledSetup, eyring, fft };
+root.AcousticSpace = { ACOUSTIC_CENTER, DIR: () => DIR, dirInterp, sourceGain, directEQ, designEQ, biquadDb, BANDS, MATERIALS, ROOMS, PATTERNS, REGIONS, MIC_SETUPS, AIR_M, expandMics, placement, directCoefs, buildIRs: buildIRsNormalized, buildIRsRaw: buildIRs, micNorm, scaledSetup, eyring, fft };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 // Acoustic — coupled string/body modal guitar engine.
@@ -821,6 +939,82 @@ const PRESETS = {
   }
 };
 const STD = [40, 45, 50, 55, 59, 64];
+
+// ---------------- picks ----------------
+// A flat pick is a short cantilever held between thumb and index finger. Per pick: Young's modulus E (Pa), density
+// (kg/m3), loss factor eta, friction against the string mu, thickness t, effective width near the tip w, radius of
+// the edge the string slides over (standard picks are cut square and polished, ~0.15 mm whatever their thickness;
+// bevelled picks are rounder), and how much tip sticks out relative to normal.
+// Values: manufacturers' thicknesses; polymer data sheets (POM/Delrin, PA6/nylon, celluloid, PEI/Ultem); bone and
+// cupronickel handbooks; friction from polymer-on-steel tables. Felt bends little and instead compresses: it is given a
+// soft contact (minimum release time and contact width) and no click.
+const PICKS = {
+  nylon46:  { name: 'Nylon .46 (thin)',            E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 0.46e-3, w: 7e-3, edge: 0.15e-3, scrape: 1.0 },
+  cell71:   { name: 'Celluloid .71 (medium)',      E: 2.0e9, rho: 1350, eta: 0.030, mu: 0.35, t: 0.71e-3, w: 8e-3, edge: 0.15e-3, scrape: 1.0 },
+  delrin100:{ name: 'Delrin 1.0 (Tortex-style)',   E: 2.9e9, rho: 1410, eta: 0.012, mu: 0.20, t: 1.00e-3, w: 8e-3, edge: 0.15e-3, scrape: 0.7 },
+  ultem150: { name: 'Ultem 1.5 (heavy)',           E: 3.3e9, rho: 1270, eta: 0.006, mu: 0.28, t: 1.50e-3, w: 8e-3, edge: 0.18e-3, scrape: 0.8 },
+  jazz3:    { name: 'Nylon 1.38, small sharp tip', E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 1.38e-3, w: 5e-3, edge: 0.18e-3, scrape: 1.0, ell: 0.75 },
+  bone300:  { name: 'Bone 3 mm, bevelled',         E: 15e9,  rho: 1900, eta: 0.010, mu: 0.25, t: 3.00e-3, w: 9e-3, edge: 0.50e-3, scrape: 0.6 },
+  coin:     { name: 'Coin (milled edge)',          E: 110e9, rho: 8900, eta: 0.002, mu: 0.40, t: 1.40e-3, w: 9e-3, edge: 0.15e-3, scrape: 3.0 },
+  leather:  { name: 'Leather 2 mm',                E: 2.5e8, rho: 900,  eta: 0.150, mu: 0.50, t: 2.00e-3, w: 9e-3, edge: 0.80e-3, scrape: 0.2, Es: 4e7 },
+  rubber:   { name: 'Rubber 2.5 mm (soft)',        E: 2.0e7, rho: 1150, eta: 0.200, mu: 0.80, t: 2.50e-3, w: 9e-3, edge: 0.80e-3, scrape: 0.1, Es: 3.6e6 },
+  felt:     { name: 'Felt 3 mm',                   E: 6e7,   rho: 400,  eta: 0.300, mu: 0.60, t: 3.00e-3, w: 10e-3, edge: 1.50e-3, scrape: 0, Es: 1e6 }
+};
+// Surface hardness: the tip's surface modulus Es (Pa; defaults to E for solid plastics, bone and metal). Shore A
+// (soft) via Gent's relation, Shore D (hard plastics) from tabulated conversions; above Shore D ~90 the tip is as hard
+// as the material's bulk stiffness.
+const SHORE_D = [[40, 3e7], [50, 9e7], [60, 2.5e8], [70, 6e8], [80, 1.5e9], [85, 2.4e9], [90, 3.8e9]];
+function shoreToEs(scale, h) {
+  if (scale === 'A') return 1e6 * 0.0981 * (56 + 7.62336 * h) / (0.137505 * (254 - 2.54 * h));
+  for (let i = 1; i < SHORE_D.length; i++) if (h <= SHORE_D[i][0]) {
+    const [h0, e0] = SHORE_D[i - 1], [h1, e1] = SHORE_D[i], t = Math.max(0, (h - h0) / (h1 - h0));
+    return Math.exp(Math.log(e0) + t * (Math.log(e1) - Math.log(e0)));
+  }
+  return SHORE_D[SHORE_D.length - 1][1];
+}
+function esToShore(Es) {
+  if (Es > 4e9) return 'harder than Shore D 90';
+  if (Es >= 3e7) { let lo = 40, hi = 95; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (shoreToEs('D', m) < Es) lo = m; else hi = m; } return 'Shore D ' + Math.round(lo); }
+  let lo = 0, hi = 99; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (shoreToEs('A', m) < Es) lo = m; else hi = m; }
+  return 'Shore A ' + Math.round(lo);
+}
+const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip length beyond the fingers
+
+// Quasi-static release: the string (lateral stiffness Ks = T L / (x (L - x))) pushes on the pick face; the pick bends
+// (tip stiffness Kp = 3 E I / l^3, end slope 1.5 delta / l), tilting its face. With the player's attack angle psi0 and
+// friction angle atan(mu), the string is pushed at alpha = psi0 + phi - atan(mu) from the stroke direction and slides
+// toward the tip; it is released when it reaches the tip, which dips D0 past the string and rises along the stroke at
+// the escape angle beta. Release time = edge radius / slip speed (stroke speed + the bent pick's recoil).
+function pickModel(pk, T, L, xp, vel, angleDeg, grip, EsOverride) {
+  const Ks = T * L / (xp * (L - xp));
+  const ell = (GRIPS[grip] || GRIPS.normal) * (pk.ell || 1);
+  const I = pk.w * pk.t ** 3 / 12, Kp = 3 * pk.E * I / ell ** 3;
+  const D0 = (0.22 + 0.6 * vel) * 1e-3, beta = 8 * Math.PI / 180, psi0 = (angleDeg ?? 20) * Math.PI / 180, phiF = Math.atan(pk.mu);
+  let d = 0.002, delta = 0, phi = 0, alpha = 0;
+  for (let it = 0; it < 40; it++) {
+    delta = Ks * d / Kp;
+    phi = Math.min(0.75, 1.5 * delta / ell);
+    alpha = Math.max(0.06, psi0 + phi - phiF);
+    d = 0.5 * d + 0.5 * D0 / (Math.sin(alpha) + Math.cos(alpha) * Math.tan(beta));
+  }
+  const fp = 0.5596 * Math.sqrt(pk.E * pk.t * pk.t / (12 * pk.rho)) / (ell * ell);
+  // recoil of the bent pick is along the stroke; only its component along the face (sin of the face tilt) speeds the slip
+  const v = 0.4 + 1.8 * vel, vSnap = 0.5 * delta * 2 * Math.PI * fp * Math.sin(psi0 + phi);
+  // Hertz contact between the string (radius ~0.2 mm) and the edge, crossed cylinders ~ a sphere of radius sqrt(r R):
+  // the string presses a dent of depth dc = (9 F^2 / (16 R E*^2))^(1/3) into the tip. A soft tip (rubber, felt) takes
+  // up part of the pick's travel in the dent (less string displacement), lets go over the time it takes the dent to
+  // unload (longer, gentler release) and touches a wider stretch of string (fewer high harmonics). Hard tips: microns.
+  const Es = EsOverride || pk.Es || pk.E, Estar = Es / (1 - 0.45 * 0.45);
+  const R = Math.sqrt(2e-4 * pk.edge), F = Ks * d;
+  const dc = Math.min(0.6 * pk.t, Math.cbrt(9 * F * F / (16 * R * Estar * Estar)));
+  const aC = Math.sqrt(R * dc);
+  d = Math.max(0.25 * d, d - dc);
+  const tau = (pk.edge + dc) / (v + vSnap), width = 2 * pk.edge + 2 * aC + 2 * dc;
+  const area = pk.w * ell, hard = Math.min(1, Math.sqrt(Es / 1e9));
+  return { d, alpha, tau, width, fp, delta, Ks, Kp, dc, Es,
+    click: Es < 5e8 ? 0 : delta * fp * fp * area, decay: 1 / (Math.PI * fp * pk.eta), scrape: pk.mu * pk.scrape * hard, hard, hold: d / v };
+}
+const PICK_REF = { type: 'cell71', angle: 20, grip: 'normal' };
 
 function makeRng(seed) {
   let s = (seed >>> 0) || 1;
@@ -1074,7 +1268,8 @@ class GuitarEngine {
       preset: 'dreadnought', tuning: STD.slice(), capo: 0, brightness: 0.55, body: 1.0, bodySize: 1.0,
       sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high',
       build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated', style: 'luthier' },
-      scene: { mics: 'fret12', hold: 'seated' }
+      scene: { mics: 'fret12', hold: 'seated' },
+      pick: { type: 'cell71', angle: 20, grip: 'normal' }
     };
     this.bend = 0; this.bendTarget = 0;
     this.RING = 16384; this.RMASK = this.RING - 1;
@@ -1094,6 +1289,7 @@ class GuitarEngine {
     this.mD = new Float64Array(14); this.mG = new Float64Array(14); this.mN = new Float64Array(14); this.mS = new Float64Array(14);
     this.mC = new Float64Array(14); this.mI = new Float64Array(14); this.mLP = new Float64Array(14); this.nm = 1;
     this.rhF = new Float64Array(8); this.feedF = 0; this.feedB = 0; this.sceneDirty = true;
+    this.eqC = new Float64Array(2 * 7 * 5); this.eqZ = new Float64Array(2 * 7 * 2); this.eqOn = false; // far-field directivity EQ per mic
     this.FY = []; this.FZ = []; for (let j = 0; j < 6; j++) { this.FY.push(new Float64Array(64)); this.FZ.push(new Float64Array(64)); }
     this.setPreset('dreadnought');
   }
@@ -1103,7 +1299,7 @@ class GuitarEngine {
     let rebuild = false, retune = false;
     for (const k in p) {
       if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality' || k === 'build') rebuild = true;
-      if (k === 'scene') this.sceneDirty = true;
+      if (k === 'scene' || k === 'build') this.sceneDirty = true;
       if (k === 'tuning' || k === 'capo' || k === 'brightness') retune = true;
       this.params[k] = p[k];
     }
@@ -1271,6 +1467,7 @@ class GuitarEngine {
 
   // ---------- events ----------
   post(ev) {
+    ev = Object.assign({}, ev);   // the queue annotates events; never touch the caller's object
     const at = ev.t == null ? this.clock : Math.max(this.clock, Math.round(ev.t * this.sr));
     ev._at = at;
     const q = this.queue; let i = q.length;
@@ -1284,7 +1481,10 @@ class GuitarEngine {
     const vel = Math.max(0.02, Math.min(1, ev.vel == null ? 0.7 : ev.vel));
     const pre = Math.round((style === 'pick' ? 0.0025 : 0.0012) * this.sr);
     const wound = this.P.strings[ev.s] && this.P.strings[ev.s].wound;
-    const amt = this.params.noise * vel * (style === 'pick' ? 0.12 : 0.04) * (wound ? 1 : 0.5);
+    let scr = 1;
+    if (style === 'pick') { const pc = Object.assign({}, PICK_REF, this.params.pick || {}, ev.pick || {}), pk = PICKS[pc.type] || PICKS.cell71;
+      scr = (pk.mu * pk.scrape) / (PICKS.cell71.mu * PICKS.cell71.scrape); }
+    const amt = this.params.noise * vel * (style === 'pick' ? 0.12 * Math.min(4, scr) : 0.04) * (wound ? 1 : 0.5);
     if (amt <= 0) return pre;
     const start = this.clock & this.RMASK;
     let p1 = 0, p2 = 0;
@@ -1300,6 +1500,9 @@ class GuitarEngine {
         if (!ev._staged) { ev._staged = true; const pre = this.preScrape(ev); if (pre > 0) { ev.t = null; ev._at = this.clock + pre; this.post2(ev); break; } }
         this.pluck(ev); break;
       case 'damp': this.dampString(ev); break;
+      case 'touch': this.touchString(ev); break;
+      case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
+      case 'tap': this.tap(ev); break;
       case 'squeak': this.squeak(ev); break;
       case 'bend': this.bendTarget = ev.value; break;
       case 'params': this.setParams(ev.params); break;
@@ -1323,7 +1526,8 @@ class GuitarEngine {
       this.loadModes(v, ev.s, midi);
     } else {
       // pick lands on a ringing string: it stops part of the motion
-      const kc = ev.style === 'pick' ? 0.62 - 0.32 * vel : 0.5 - 0.3 * vel;
+      // (a brief nail sweep, as in rasgueado, only skims it: ~90% of the motion survives; Laurson et al. 2010)
+      const kc = ev.keep ?? (ev.style === 'pick' ? 0.62 - 0.32 * vel : 0.5 - 0.3 * vel);
       for (let c = 0; c < v.n; c++) { v.y1[c] *= kc; v.y2[c] *= kc; }
     }
     s.midi = midi; s.fret = Math.round(midi - s.open);
@@ -1341,13 +1545,29 @@ class GuitarEngine {
     const L = v.L;
     const pickPos = (ev.pickPos == null ? 0.2 : ev.pickPos) * P.scale * (1 + (this.rng() - 0.5) * 0.06);
     const xp = Math.max(0.02 * L, Math.min(0.5 * L, pickPos));
-    const h = (0.0003 + 0.0032 * Math.pow(vel, 1.3)) * (ev.dead ? 0.5 : 1) * (style === 'thumb' ? 1.1 : 1);
+    let h = (0.0003 + 0.0032 * Math.pow(vel, 1.3)) * (ev.dead ? 0.5 : 1) * (style === 'thumb' ? 1.1 : 1);
     const br = this.params.brightness;
-    let tau, width, theta;
-    if (style === 'pick') { tau = 1.6e-4 * (1.5 - vel) * (1.3 - 0.6 * br); width = 0.0015; theta = 0.18 + 0.12 * this.rng(); }
+    let tau, width, theta, pm = null;
+    if (style === 'pick') {
+      tau = 1.6e-4 * (1.5 - vel) * (1.3 - 0.6 * br); width = 0.0015; theta = 0.18 + 0.12 * this.rng();
+      // the chosen pick relative to the calibrated reference (medium celluloid, normal grip, 20 degrees)
+      const pc = Object.assign({}, PICK_REF, this.params.pick || {}, ev.pick || {});
+      const pk = PICKS[pc.type] || PICKS.cell71, T = v.T;
+      pm = pickModel(pk, T, L, xp, vel, pc.angle, pc.grip, pc.Es || null);
+      const p0 = pickModel(PICKS.cell71, T, L, xp, vel, PICK_REF.angle, PICK_REF.grip);
+      pm.rel = { d: pm.d / p0.d, tau: pm.tau / p0.tau, width: pm.width / p0.width, alpha: pm.alpha - p0.alpha,
+        click: pm.click / p0.click, scrape: pm.scrape / p0.scrape, hard: pm.hard / p0.hard };
+      tau *= Math.min(12, Math.max(0.1, pm.rel.tau));
+      width *= pm.rel.width;
+      theta = Math.min(1.25, Math.max(0.04, theta + pm.rel.alpha));
+    }
     else if (style === 'thumb') { tau = 1.1e-3 * (1.4 - 0.6 * vel); width = 0.012; theta = 0.5 + 0.2 * this.rng(); }
     else { tau = 6e-4 * (1.4 - 0.6 * vel); width = 0.008; theta = 0.65 + 0.25 * this.rng(); }
-    if (this.params.preset === 'classical' && style !== 'pick') tau *= 0.5; // nails
+    if (style !== 'pick' && (ev.nail ?? this.params.preset === 'classical')) { tau *= 0.5; width = Math.min(width, 0.0025); } // nail: 1-3 mm contact
+    // rest stroke (apoyando): the finger pushes the string toward the top and stops on the next string, so more of
+    // the motion is perpendicular to the top (louder, shorter, rounder); a free stroke pulls it more along the top
+    if (ev.rest && style !== 'pick') theta = Math.min(1.35, theta + 0.4);
+    if (pm) h *= Math.min(2, Math.max(0.3, pm.rel.d));
     if (ev.bright != null) tau /= Math.max(0.2, ev.bright);
     if (ev.dead) tau *= 2;
     const ct = Math.cos(theta), st = Math.sin(theta);
@@ -1375,7 +1595,7 @@ class GuitarEngine {
     const Fs = v.T * h / xp * dir;
     this.staticZ -= Fs * st; this.staticY -= Fs * ct;
     // release click: pick or nail leaving the string, straight into the body
-    const nAmt = this.params.noise * vel * (style === 'pick' ? 0.45 : 0.15) * (ev.dead ? 2 : 1);
+    const nAmt = this.params.noise * vel * (style === 'pick' ? 0.45 * Math.min(4, pm ? Math.sqrt(pm.rel.scrape) * pm.rel.hard : 1) : 0.15) * (ev.dead ? 2 : 1);
     if (nAmt > 0) {
       const start = this.clock & this.RMASK, nl = Math.round(0.004 * sr);
       const wound = this.P.strings[ev.s].wound;
@@ -1383,6 +1603,16 @@ class GuitarEngine {
       for (let i = 0; i < nl; i++) {
         const r = this.rng() * 2 - 1, hp = r - 2 * p1 + p2; p2 = p1; p1 = r;
         this.bodyIn[(start + i) & this.RMASK] += hp * nAmt * Math.exp(-i / (0.0009 * sr)) * (wound ? 1 : 0.5);
+      }
+      // the pick's own flap as it springs back: a decaying ring at its cantilever frequency, heard through the air
+      if (pm && pm.click > 0) {
+        const f = Math.min(0.42 * sr, pm.fp), rel = Math.min(10, pm.rel.click);
+        const amp = this.params.noise * vel * 0.012 * rel, dec = Math.max(0.0004, Math.min(0.03, pm.decay));
+        const n2 = Math.min(this.RING - 64, Math.round(dec * 5 * sr)), w = TAU * f / sr, pan = (ev.s - 2.5) / 8;
+        for (let i = 0; i < n2; i++) {
+          const val = amp * Math.sin(w * i) * Math.exp(-i / (dec * sr)) * Math.min(1, i / 6);
+          this.dirL[(start + i) & this.RMASK] += val * (1 - pan); this.dirR[(start + i) & this.RMASK] += val * (1 + pan);
+        }
       }
     }
   }
@@ -1414,6 +1644,31 @@ class GuitarEngine {
       if (y1 * y1 + y2 * y2 > 2e-15) v.act[n++] = c;
     }
     v.nact = n;
+  }
+
+  // A finger (or palm) touching a string for a moment: planting before a pluck, a rest stroke landing on its
+  // neighbour, an accidental graze. Damping for `dur` seconds, then the finger leaves; a soft contact noise.
+  touchString(ev) {
+    const s = this.strings[ev.s]; if (!s) return;
+    const amt = ev.amt == null ? 30 : ev.amt, dur = ev.dur == null ? 0.08 : ev.dur;
+    s.touchId = (s.touchId || 0) + 1;
+    for (const v of s.voices) { v.extraTarget = Math.max(v.extraTarget, amt); v.extraRate = 0.6; }
+    this.post2({ type: 'untouch', s: ev.s, id: s.touchId, _at: this.clock + Math.round(dur * this.sr), _staged: true });
+    const na = this.params.noise * 0.02 * Math.min(1, s.env * 10 + 0.15) * (ev.nail ? 1.6 : 1);
+    if (na > 1e-4) {
+      const at = this.clock & this.RMASK; let p = 0;
+      for (let k = 0; k < 240; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * na * Math.exp(-k / 50); p = r; }
+    }
+  }
+
+  // Golpe: a finger or nail tapping the top near the bridge. A half-sine force pulse into the body (flesh ~4 ms,
+  // nail ~1.5 ms with a click), so the body's own modes ring.
+  tap(ev) {
+    const sr = this.sr, vel = Math.max(0.05, Math.min(1, ev.vel ?? 0.7));
+    const dur = (ev.nail ? 0.0015 : 0.004) * (1.2 - 0.4 * vel), n = Math.max(4, Math.round(dur * sr));
+    const F = (ev.amt ?? 1) * 1.2 * vel, at = this.clock & this.RMASK;
+    for (let k = 0; k < n; k++) this.bodyIn[(at + k) & this.RMASK] += F * Math.sin(Math.PI * (k + 0.5) / n);
+    if (ev.nail) { let p = 0; for (let k = 0; k < 120; k++) { const r = this.rng() * 2 - 1; this.bodyIn[(at + k) & this.RMASK] += (r - p) * 0.08 * vel * Math.exp(-k / 25); p = r; } }
   }
 
   dampString(ev) {
@@ -1629,6 +1884,21 @@ class GuitarEngine {
         r[1] = r[0]; r[0] = L; r[3] = r[2]; r[2] = yl; L = yl;
         const yr = this.rhb0 * R + this.rhb1 * r[4] + this.rhb2 * r[5] - this.rha1 * r[6] - this.rha2 * r[7];
         r[5] = r[4]; r[4] = R; r[7] = r[6]; r[6] = yr; R = yr; }
+      if (this.eqOn) {
+        // measured far-field directivity correction (transposed direct form II biquads)
+        const c = this.eqC, z = this.eqZ;
+        for (let ch = 0; ch < 2; ch++) {
+          let x = ch === 0 ? L : R;
+          for (let q = 0; q < 7; q++) {
+            const o = (ch * 7 + q) * 5, zo = (ch * 7 + q) * 2;
+            const y = c[o] * x + z[zo];
+            z[zo] = c[o + 1] * x - c[o + 3] * y + z[zo + 1];
+            z[zo + 1] = c[o + 2] * x - c[o + 4] * y;
+            x = y;
+          }
+          if (ch === 0) L = x; else R = x;
+        }
+      }
       this.airL = this.airC * this.airL + (1 - this.airC) * L;
       this.airR = this.airC * this.airR + (1 - this.airC) * R;
       L = this.airL + this.dirL[tIdx]; R = this.airR + this.dirR[tIdx];
@@ -1669,12 +1939,23 @@ class GuitarEngine {
       this.mS[j] = c.shadow;
       this.mC[j] = 1 - Math.exp(-TAU * (ears ? 1400 : 380) / this.sr);
     }
+    // far-field correction toward the measured directivity of a played guitar (AcousticSpace.directEQ)
+    this.eqOn = false;
+    if (S && S.directEQ) {
+      const eq = S.directEQ(sc);
+      for (let ch = 0; ch < 2; ch++) {
+        const g = eq[Math.min(ch, eq.length - 1)];
+        if (g.some(x => Math.abs(x) > 0.05)) this.eqOn = true;
+        const cs = S.designEQ(g, this.sr);
+        for (let q = 0; q < 7; q++) for (let k = 0; k < 5; k++) this.eqC[(ch * 7 + q) * 5 + k] = cs[q][k];
+      }
+    }
   }
 
   panicReset() {
     for (const s of this.strings) for (const v of s.voices) { v.y1.fill(0); v.y2.fill(0); v.nact = 0; }
     this.body.reset(); this.staticZ = this.staticY = 0; this.radL = this.radR = this.radXL = this.radXR = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
-    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0);
+    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0); this.eqZ.fill(0);
   }
 
   meters() {
@@ -1686,6 +1967,10 @@ root.GuitarEngine = GuitarEngine;
 root.GUITAR_PRESETS = PRESETS;
 root.GUITAR_WOODS = WOODS;
 root.GUITAR_HOLDS = HOLDS;
+root.GUITAR_PICKS = PICKS;
+root.GUITAR_GRIPS = GRIPS;
+root.guitarPickModel = pickModel;
+root.guitarShore = { toEs: shoreToEs, fromEs: esToShore };
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {
   class GuitarProcessor extends AudioWorkletProcessor {
@@ -1707,7 +1992,427 @@ if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 
 }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
-<script>// Acoustic — performance layer: turns keyboard notes into what a guitarist's hands would do.
+<script>// Acoustic — the plucking hand. Turns a held chord into what a guitarist's right hand does with it, style by style:
+// which finger takes which string, when each finger actually lands, how hard, rest or free stroke, and the small
+// contacts a real hand makes (a rest stroke landing on the next string, a follow-through grazing a neighbour, the
+// ring finger dragged along by the middle, the thumb resting on the bass, fingers planted before an arpeggio, the
+// ring finger tapping the top). Melody notes played over a running pattern are taken by alternating fingers.
+//
+// Patterns are written in a small notation, one entry per grid step ('-' = nothing), several actions per step:
+//   p:B   thumb on the bass string            i:T1 m:T2 a:T3   fingers on the three highest chord strings
+//   p:A   thumb on the alternate bass (prefers the chord's 5th)   p:M   thumb on the string above the bass
+//   D:all / U:top3 / D:B ...   flatpick stroke down/up across a string set or on a single role
+//   R:eami   rasgueado: each finger in turn flicks its nail down across the strings (R:ami, R:i, Ru:i = index up)
+//   N:T3     a nail stroke down on one string (clawhammer)       K:top3  brush down with the backs of the nails
+//   Pd:/Pu:  thumb down / thumbnail up through a string set (alzapúa)
+//   G        golpe (tap on the top)                              X:all   tapado: strings muted by the palm, struck
+// Modifiers after a token:  > accent   . ghost (soft)   ! rest stroke   _ palm-muted
+//
+// Numbers (see README, "The plucking hand"):
+//   timing   two levels: a slow drift of the whole hand against the beat (AR(1), rho 0.9; Heijink & Meulenbroek 2002
+//            found most of professionals' 18-24 ms onset SD was whole-pattern shifts) plus note-to-note jitter
+//            SD = sqrt(4^2 + (k IOI)^2) ms, k ~0.06 for students (Nezio Malta 2012: arpeggio IOI SD 17 ms at 184 ms)
+//            down to ~0.03 for professionals; the ring finger slightly late; tremolo's gap before the thumb.
+//   chords   plucked together: first-to-last spread ~10 ms (tight) to ~28 ms (loose) in a fixed order per player
+//            (Nezio Malta 2012); louder notes a few ms earlier (Goebl 2001).
+//   dynamics per-pluck SD ~1.5-2 dB (professional) to 3-4 dB (amateur); m loudest, a weakest, thumb softer in
+//            accompaniment; accents +3-4 dB; rest stroke +2.5 dB and more perpendicular to the top.
+//   limits   same finger again no sooner than 140-180 ms, thumb 110 ms; finger independence falls with rate and is
+//            lowest for the ring finger (Hager-Ross & Schieber 2000; Zatsiorsky et al. 2000).
+//   errors   brushes 0.3% (professional) to 3% (amateur) per pluck, -20 to -30 dB; slips late and soft (Maidhof
+//            et al. 2009). These rates are estimates: no guitar study has measured them.
+//   rasgueado four overlapping nail sweeps across ~290 ms (Laurson, Valimaki & Penttinen 2010).
+
+(function (root) {
+'use strict';
+
+function gauss(r) { return (r() + r() + r() + r() - 2) * 1.7321; }   // ~N(0,1)
+function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+const dB = (x) => Math.pow(10, x / 26);   // pluck velocity -> level: string displacement ~ vel^1.3
+
+// ---------------- motor parameters ----------------
+// db: level offset of the finger in arpeggios; bias: mean lag (s); minGap: shortest repeat of the same finger (s,
+// for a professional; amateurs ~30% longer); indep: individuation index (Hager-Ross & Schieber 2000).
+const MOTOR = {
+  fingers: {
+    p: { db: -2.0, bias: -0.001, minGap: 0.110, indep: 0.983, style: 'thumb' },
+    i: { db: 0.0, bias: 0.000, minGap: 0.140, indep: 0.982, style: 'finger' },
+    m: { db: 0.5, bias: 0.000, minGap: 0.140, indep: 0.937, style: 'finger' },
+    a: { db: -1.5, bias: 0.004, minGap: 0.150, indep: 0.907, style: 'finger' },
+    c: { db: -3.0, bias: 0.005, minGap: 0.170, indep: 0.943, style: 'finger' },
+    e: { db: -2.0, bias: 0.000, minGap: 0.170, indep: 0.943, style: 'finger' }   // little finger, rasgueado
+  },
+  jitterFloor: 0.004,      // s
+  jitterK: [0.075, 0.03],  // fraction of the inter-onset interval, beginner -> professional (an IOI SD is sqrt(2) x the onset SD:
+                           // students' 17 ms IOI SD at 184 ms (Nezio Malta 2012) ~ k 0.06 at skill ~0.35)
+  driftRho: 0.9,
+  driftSd: [0.06, 0.03],   // stationary SD of the hand's drift, fraction of the step
+  velSdDb: [3.5, 1.7],
+  chordSpread: [[28, 8], [10, 5]],  // ms first-to-last (mean, SD): loose, tight
+  brush: [0.03, 0.003],    // per free-stroke pluck, before rate and style scaling
+  drag: [0.015, 0.002],    // ring finger pulled along by the middle finger
+  slip: [0.03, 0.005]      // a pluck that goes wrong: missed, wrong string, or late and soft
+};
+const lerp = (pair, skill) => pair[0] + (pair[1] - pair[0]) * skill;
+
+// ---------------- styles ----------------
+// sub: grid steps per beat; beats: pattern length; tempo: typical bpm; swing: long/short ratio of off-beat pairs at
+// slow tempo, shrinking toward 1 as tempo rises (Friberg & Sundstrom 2002; Honing & de Haas 2008); push: playing
+// ahead (-) or behind (+), s; offEarly: off-beats early by this fraction of a beat (Brazilian microtiming, Gouyon
+// 2007); nail: plucks with nails; thumbDb: thumb level in this style; thumbRest: chance the thumb settles on the next
+// string after a bass note; plant: sequential planting; preP: tremolo's extra gap before the thumb.
+const STYLES = {
+  classical: { name: 'Classical arpeggio (p-i-m-a-m-i)', tempo: 66, sub: 3, beats: 2, nail: true, brush: 0.7,
+    steps: ['p:B', 'i:T1', 'm:T2', 'a:T3', 'm:T2', 'i:T1'] },
+  giuliani: { name: 'Classical: Giuliani p-i-m-i, bass rest stroke', tempo: 72, sub: 4, beats: 2, nail: true, thumbDb: 3, brush: 0.7,
+    steps: ['p:B!>', 'i:T1', 'm:T2', 'i:T1', 'p:A!', 'i:T1', 'm:T2', 'i:T1'] },
+  planted: { name: 'Classical: planted arpeggio (p-i-m-a)', tempo: 60, sub: 4, beats: 1, nail: true, plant: true, brush: 0.5,
+    steps: ['p:B', 'i:T1', 'm:T2', 'a:T3'] },
+  tremolo: { name: 'Classical tremolo (p-a-m-i)', tempo: 140, sub: 4, beats: 2, nail: true, preP: true, brush: 0.6,
+    steps: ['p:B', 'a:T3', 'm:T3', 'i:T3', 'p:A', 'a:T3', 'm:T3', 'i:T3'] },
+  travis: { name: 'Travis picking (alternating thumb)', tempo: 110, sub: 2, beats: 4, swing: 1.2, thumbDb: 0, thumbRest: 0.45, brush: 1.0,
+    steps: ['p:B_> m:T3', 'i:T2', 'p:A_', 'm:T3', 'p:B_', 'i:T2', 'p:A_', 'm:T3.'] },
+  folk: { name: 'Folk fingerpicking (p-i-m-i)', tempo: 92, sub: 2, beats: 4, thumbDb: -1, thumbRest: 0.3, brush: 1.2,
+    steps: ['p:B>', 'i:T1', 'm:T2', 'i:T1', 'p:A', 'i:T1', 'm:T2', 'i:T1'] },
+  ballad: { name: 'Ballad pinch (p+a, then i-m)', tempo: 76, sub: 2, beats: 4, brush: 1.0,
+    steps: ['p:B> a:T3', 'i:T1', 'm:T2', 'i:T1', 'p:A m:T2', 'i:T1', 'a:T3', 'i:T1'] },
+  bossa: { name: 'Bossa nova (thumb + block chords)', tempo: 136, sub: 2, beats: 8, thumbDb: 2, offEarly: 0.025, brush: 0.7,
+    steps: ['p:B i:T1 m:T2 a:T3', '-', '-', 'i:T1 m:T2 a:T3', 'p:A', '-', 'i:T1. m:T2. a:T3.', '-',
+            'p:B', '-', 'i:T1 m:T2 a:T3', '-', 'p:A i:T1 m:T2 a:T3', '-', '-', '-'] },
+  boomchuck: { name: 'Bluegrass boom-chuck (flatpick)', tempo: 120, sub: 2, beats: 4, pick: true, swing: 1.25, push: -0.006, brush: 0,
+    steps: ['D:B>', '-', 'D:top4', 'U:top3.', 'D:A>', '-', 'D:top4', 'U:top3.'] },
+  crosspick: { name: 'Bluegrass crosspicking roll (D-D-U, 3+3+2)', tempo: 120, sub: 2, beats: 4, pick: true, swing: 1.15, push: -0.004, brush: 0,
+    steps: ['D:T1>', 'D:T2', 'U:T3', 'D:T1>', 'D:T2', 'U:T3', 'D:T1>', 'U:T3'] },
+  clawhammer: { name: 'Clawhammer / frailing (bum-ditty)', tempo: 100, sub: 2, beats: 2, brush: 0.8,
+    steps: ['N:T3>', '-', 'K:top3', 'p:A'] },
+  rumba: { name: 'Flamenco rumba (rasgueo + tapado)', tempo: 110, sub: 2, beats: 4, nail: true, push: -0.004, brush: 0,
+    steps: ['R:i>', '-', 'X:all G', 'Ru:i.', '-', 'Ru:i', 'X:all G', 'Ru:i.'] },
+  solea: { name: 'Flamenco soleá compás (12 beats)', tempo: 150, sub: 1, beats: 12, nail: true, brush: 0,
+    steps: ['p:B', 'R:i', 'R:eami> G', 'p:B', 'R:i', 'R:eami> G', 'R:i', 'R:eami> G', 'p:B', 'R:eami> G', 'Ru:i', 'R:ami> G'] },
+  alzapua: { name: 'Flamenco alzapúa (thumb down-up-down)', tempo: 120, sub: 3, beats: 2, nail: true, brush: 0,
+    steps: ['p:B!>', 'Pd:top3', 'Pu:top3', 'p:B!>', 'Pd:top3', 'Pu:top3'] }
+};
+
+// ---------------- the hand ----------------
+class RightHand {
+  // host: { send(events), now(), rng(), open(), options() }  (options: style, bpm, skill, brushes, palm, pickPos, humanize)
+  constructor(host) {
+    this.h = host;
+    this.running = false; this.v = null; this.vel = 0.7;
+    this.step = 0; this.tGrid = 0; this.timer = null; this.drift = 0;
+    this.lastT = {};                      // finger -> last pluck time
+    this.ringing = [-9, -9, -9, -9, -9, -9];
+    this.melody = new Map();              // string -> melody note holding it
+    this.lastMel = null;                  // { s, finger }
+    // this player's habitual order of fingers in a plucked chord (stable across the performance)
+    const r = host.rng, order = ['p', 'i', 'm', 'a'];
+    for (let k = order.length - 1; k > 0; k--) { const j = Math.floor(r() * (k + 1)); [order[k], order[j]] = [order[j], order[k]]; }
+    this.chordOrder = order;
+  }
+  style() { return STYLES[this.h.options().style] || STYLES.travis; }
+  stepDur() { const o = this.h.options(), S = this.style(); return 60 / Math.max(30, o.bpm || S.tempo || 96) / S.sub; }
+  skill() { return clamp(this.h.options().skill ?? 0.6, 0, 1); }
+  hum() { return (this.h.options().humanize ?? 0.6) / 0.6; }
+
+  // a new chord: start the pattern now, or keep the running grid and swap the voicing
+  chord(v, vel, t) {
+    const prev = this.v;
+    this.v = v; this.vel = vel; this.roles = this.mapRoles(v);
+    if (!this.running) {
+      this.running = true; this.step = 0; this.tGrid = t; this.drift = 0;
+      this.tick();
+      return;
+    }
+    // grabbed just after a step went out with the old chord: play that step again, late, like a late left hand
+    const sd = this.stepDur(), last = this.tGrid - sd;
+    if (prev && t - last < Math.min(0.09, 0.45 * sd) && t >= last - 0.01) this.emitStep((this.step - 1 + this.len()) % this.len(), Math.max(t, last), true);
+  }
+  realign(t) { if (!this.running) return; this.step = 0; this.tGrid = t; this.drift = 0; }
+  stop() { this.running = false; clearTimeout(this.timer); this.timer = null; this.melody.clear(); }
+  len() { return this.style().steps.length; }
+
+  swingRatio() {
+    const S = this.style(), bpm = this.h.options().bpm || S.tempo || 96;
+    if (!S.swing || S.sub % 2) return 1;
+    return 1 + (S.swing - 1) * clamp((220 - bpm) / (220 - 100), 0, 1);
+  }
+  tick() {
+    if (!this.running) return;
+    const now = this.h.now(), ahead = 0.035;
+    while (this.tGrid < now + ahead) {
+      this.emitStep(this.step, this.tGrid, false);
+      this.step = (this.step + 1) % this.len();
+      const S = this.style(), sd = this.stepDur(), sw = this.swingRatio();
+      const k = S.sub % 2 === 0 ? (this.step % 2 === 1 ? 2 * sw / (1 + sw) : 2 / (1 + sw)) : 1;
+      this.tGrid += sd * k;
+    }
+    this.timer = setTimeout(() => this.tick(), 12);
+  }
+
+  // roles -> strings for this voicing
+  mapRoles(v) {
+    const open = this.h.open();
+    const snd = []; v.frets.forEach((f, s) => { if (f >= 0) snd.push(s); });
+    const pitch = (s) => open[s] + v.frets[s];
+    const B = snd[0];
+    const rootPc = pitch(B) % 12;
+    let A = snd.find(s => s !== B && s <= 3 && (pitch(s) - rootPc + 120) % 12 === 7);
+    if (A == null) A = snd.find(s => s > B && s <= 3) ?? snd[1] ?? B;
+    const treb = snd.filter(s => s >= 2 && s !== B && s !== A);
+    const top = treb.length >= 3 ? treb.slice(-3) : snd.slice(-3);
+    const T3 = top[top.length - 1], T2 = top[top.length - 2] ?? T3, T1 = top[top.length - 3] ?? T2;
+    const M = snd.find(s => s > B) ?? B;
+    return { B, A, M, T1, T2, T3, snd };
+  }
+  stringSet(name) {
+    const r = this.roles, snd = r.snd;
+    if (name === 'all') { const out = []; for (let s = snd[0]; s <= snd[snd.length - 1]; s++) out.push(s); return out; }
+    const m = /^top(\d)$/.exec(name);
+    if (m) { const n = +m[1], hi = snd[snd.length - 1], out = []; for (let s = Math.max(snd[0], hi - n + 1); s <= hi; s++) out.push(s); return out; }
+    return [r[name]].filter(s => s != null);
+  }
+  midiOf(s) { const open = this.h.open(); return this.melody.has(s) ? this.melody.get(s) : (this.v.frets[s] >= 0 ? open[s] + this.v.frets[s] : open[s]); }
+
+  // ---- one grid step ----
+  emitStep(k, tGrid, late) {
+    const S = this.style(), o = this.h.options(), rng = this.h.rng;
+    const src = S.steps[k];
+    if (!src || src === '-' || !this.v) return;
+    const skill = this.skill(), sd = this.stepDur(), hum = this.hum();
+    if (!late) { // slow drift of the whole hand against the beat
+      const sdD = lerp(MOTOR.driftSd, skill) * sd * hum;
+      this.drift = this.drift * MOTOR.driftRho + gauss(rng) * sdD * Math.sqrt(1 - MOTOR.driftRho * MOTOR.driftRho);
+    }
+    const onBeat = k % S.sub === 0;
+    let t = tGrid + this.drift + (S.push || 0);
+    if (!onBeat && S.offEarly) t -= S.offEarly * sd * S.sub;
+    const metric = k === 0 ? 1.0 : onBeat ? 0.93 : 0.84;
+    const toks = src.trim().split(/\s+/);
+    const pluckToks = toks.filter(x => /^[pimac]:/.test(x));
+    const evs = [];
+    // a plucked chord: fingers land in this player's habitual order over the chord spread
+    let chordOff = null;
+    if (pluckToks.length > 1) {
+      const [mu, sdS] = MOTOR.chordSpread.map(x => x).reduce((a, b) => [a[0] + (b[0] - a[0]) * skill, a[1] + (b[1] - a[1]) * skill]);
+      const spread = Math.max(0, mu + gauss(rng) * sdS) / 1000 * hum;
+      const fingers = pluckToks.map(x => x[0]);
+      const ranked = this.chordOrder.filter(f => fingers.includes(f));
+      chordOff = {}; ranked.forEach((f, j) => { chordOff[f] = ranked.length > 1 ? spread * j / (ranked.length - 1) - spread / 2 : 0; });
+    }
+    for (const tok of toks) this.action(tok, t, metric, chordOff, sd, evs, S, o);
+    this.h.send(evs);
+  }
+
+  // per-pluck timing and level noise, scaled by skill and the humanize control
+  jitter(ioi) {
+    const k = lerp(MOTOR.jitterK, this.skill());
+    return gauss(this.h.rng) * Math.sqrt(MOTOR.jitterFloor ** 2 + (k * ioi) ** 2) * this.hum();
+  }
+  velNoise() { return dB(gauss(this.h.rng) * lerp(MOTOR.velSdDb, this.skill()) * this.hum()); }
+  rateFactor(finger, t) {  // independence falls as fingers move faster than ~3 Hz (Hager-Ross & Schieber 2000)
+    const last = this.lastT[finger]; if (last == null) return 1;
+    const hz = 1 / Math.max(0.03, t - last);
+    return 1 + Math.max(0, hz - 3) / 3;
+  }
+
+  action(tok, t0, metric, chordOff, sd, evs, S, o) {
+    const rng = this.h.rng, v = this.v, skill = this.skill(), hum = this.hum();
+    const mods = /[>.!_]+$/.exec(tok); const md = mods ? mods[0] : '';
+    const core = mods ? tok.slice(0, -md.length) : tok;
+    const accent = md.includes('>'), ghost = md.includes('.');
+    const acc = accent ? dB(3.5) : ghost ? dB(-6) : 1;
+    const rest = md.includes('!') || (S.rest && !ghost);
+    const palm = md.includes('_') || o.palm;
+    const vel0 = this.vel * metric * acc;
+    const [kind, arg] = core.split(':');
+    const tA = t0 - (accent ? 0.003 : 0);   // accented notes come a little early
+
+    if (kind === 'G') { evs.push({ type: 'tap', t: tA + 0.002 + Math.abs(this.jitter(0.02)), vel: clamp(vel0 * 0.9, 0.05, 1), nail: true }); return; }
+
+    // flatpick strokes
+    if (kind === 'D' || kind === 'U') {
+      const dir = kind === 'D' ? 1 : -1, set = this.stringSet(arg);
+      if (set.length === 1) {
+        const s = set[0]; if (this.melody.has(s)) return;
+        if (this.slip(evs, s, tA, dir, 'pick', vel0)) return;
+        evs.push({ type: 'pluck', s, midi: this.midiOf(s), t: tA + this.jitter(sd), dir, style: 'pick',
+          vel: clamp(vel0 * (dir < 0 ? 0.9 : 1) * this.velNoise(), 0.03, 1), palm, dead: v.frets[s] < 0,
+          pickPos: (o.pickPos || 0.2) * (1 + gauss(rng) * 0.04 * hum), bright: dir < 0 ? 1.4 : 1 });
+        this.ringing[s] = tA;
+        // a single-string pick stroke sometimes clips the next string in its path
+        if (rng() < lerp(MOTOR.brush, skill) * (o.brushes ?? 1) * 1.5) this.graze(evs, s + dir, tA + 0.006, 'pick', vel0, dir);
+        return;
+      }
+      this.sweep(evs, dir > 0 ? set : set.slice().reverse(), tA + this.jitter(sd) * 0.6, vel0 * (dir < 0 ? 0.88 : 1), dir, 'pick', false, palm, o);
+      return;
+    }
+    if (kind === 'X') { this.sweep(evs, this.stringSet(arg), tA, vel0 * 0.8, 1, S.pick ? 'pick' : 'finger', S.nail, palm, o, true); return; }
+    if (kind === 'K') { this.sweep(evs, this.stringSet(arg), tA + this.jitter(sd), vel0 * 0.8, 1, 'finger', true, palm, o); return; }
+    if (kind === 'N') { // clawhammer: the nail strikes down through one string and comes to rest on the next
+      for (const s of this.stringSet(arg)) {
+        if (this.melody.has(s)) continue;
+        const t = tA + this.jitter(sd);
+        evs.push({ type: 'pluck', s, midi: this.midiOf(s), t, dir: 1, style: 'finger', nail: true, rest: true,
+          vel: clamp(vel0 * dB(1) * this.velNoise(), 0.03, 1), palm, pickPos: 0.22 });
+        this.ringing[s] = t;
+      }
+      return;
+    }
+    if (kind === 'Pd' || kind === 'Pu') { // alzapúa: thumb through the strings down, thumbnail back up
+      const dir = kind === 'Pd' ? 1 : -1, set = this.stringSet(arg);
+      this.sweep(evs, dir > 0 ? set : set.slice().reverse(), tA + this.jitter(sd) * 0.6, vel0 * (dir > 0 ? 0.9 : 0.75), dir, 'thumb', true, palm, o, false, 0.02);
+      return;
+    }
+    if (kind === 'R' || kind === 'Ru') {
+      // rasgueado: fingers flick out one after another, each nail sweeping the strings; successive sweeps overlap
+      // (Laurson et al. 2010: four sweeps across ~290 ms). Gap scales with the beat, tighter for a stronger player.
+      const fingers = kind === 'Ru' ? ['i'] : arg.split('');
+      const set = this.stringSet('all');
+      const beat = sd * S.sub;
+      const gap = clamp(0.22 * beat, 0.055, 0.1) * (1.15 - 0.3 * skill);
+      fingers.forEach((f, j) => {
+        const F = MOTOR.fingers[f] || MOTOR.fingers.i;
+        const tf = tA + j * gap * (1 + gauss(rng) * 0.1 * (1.6 - 1.2 * skill)) + F.bias;
+        const dir = kind === 'Ru' ? -1 : 1;
+        const strength = dB(F.db) * (j === fingers.length - 1 ? dB(1.5) : 1);   // the last flick lands the accent
+        const order = dir > 0 ? set : set.slice().reverse().slice(0, Math.max(3, Math.round(set.length * 0.7)));
+        this.sweep(evs, order, tf, vel0 * strength * 0.72, dir, 'finger', true, palm, o, false, 0.045, 0.9);
+      });
+      return;
+    }
+
+    // ---- a finger plucking one string ----
+    const finger = kind, F = MOTOR.fingers[finger];
+    if (!F) return;
+    const s = this.roles[arg];
+    if (s == null || this.melody.has(s)) return;
+    const thumb = finger === 'p';
+    // inside a plucked chord the measured first-to-last spread already carries the timing scatter
+    let t = tA + F.bias + this.jitter(sd) * (chordOff ? 0.3 : 1) + (chordOff ? chordOff[finger] ?? 0 : 0);
+    // tremolo: the thumb arrives late after the a-m-i run (the "gallop"), less so for a strong player
+    if (S.preP && thumb) t += (0.12 - 0.09 * skill) * sd;
+    // a finger asked to repeat faster than it can arrives late and softer
+    const minGap = F.minGap * (1.3 - 0.3 * skill), last = this.lastT[finger];
+    let tired = 1;
+    if (last != null && t - last < minGap) { t = last + minGap * (0.95 + 0.1 * rng()); tired = dB(-1.5); }
+    const rate = this.rateFactor(finger, t);
+    this.lastT[finger] = t;
+    let level = dB(thumb ? (S.thumbDb ?? F.db) : F.db + (finger === 'a' ? -1.5 * (1 - skill) : 0));
+    if (rest) level *= dB(2.5);
+    const vel = clamp(vel0 * level * tired * this.velNoise(), 0.03, 1);
+    if (this.slip(evs, s, t, thumb ? 1 : -1, F.style, vel)) return;
+    // sequential planting: the finger settles on its string a moment before plucking it, cutting what rang there
+    if (S.plant && !thumb && t - this.ringing[s] > 0.05) evs.push({ type: 'touch', s, amt: 50, dur: 0.6 * sd, t: t - 0.6 * sd - 0.004, nail: S.nail });
+    evs.push({ type: 'pluck', s, midi: this.midiOf(s), t, dir: thumb ? 1 : -1, style: F.style, nail: S.nail, rest, palm: palm && thumb,
+      vel, dead: v.frets[s] < 0, pickPos: (o.pickPos || 0.2) * (thumb ? 1.12 : 0.95) * (1 + gauss(rng) * 0.05 * hum) });
+    this.ringing[s] = t;
+    // where the finger goes next: fingers follow through toward the bass strings (toward the palm), the thumb
+    // toward the treble strings
+    const nb = thumb ? s + 1 : s - 1;
+    if (rest) { // the stroke ends on the neighbour and stays there until the finger moves on
+      if (nb >= 0 && nb <= 5 && !this.melody.has(nb)) evs.push({ type: 'touch', s: nb, amt: 45, dur: 0.06 + 0.1 * rng(), t: t + 0.02 + 0.02 * rng() });
+    } else {
+      const pB = lerp(MOTOR.brush, skill) * (S.brush ?? 1) * (o.brushes ?? 1) * rate * (0.6 + 0.6 * this.vel);
+      if (rng() < pB) this.graze(evs, nb, t + 0.004 + 0.006 * rng(), F.style, vel, thumb ? 1 : -1);
+    }
+    // the ring finger, poorly individuated, is dragged along by the middle finger
+    if (finger === 'm' && rng() < lerp(MOTOR.drag, skill) * (o.brushes ?? 1) * rate * (S.brush ?? 1)) this.graze(evs, s + 1, t + 0.008, 'finger', vel, -1);
+    // in alternating-bass styles the thumb settles on the next string after a bass note, muting it
+    if (thumb && S.thumbRest && nb <= 3 && rng() < S.thumbRest && !this.melody.has(nb)) evs.push({ type: 'touch', s: nb, amt: 35, dur: 0.05 + 0.15 * rng(), t: t + 0.03 });
+  }
+
+  // a pluck that goes wrong (rare for a strong player): missed, the neighbouring string instead, or late and soft
+  slip(evs, s, t, dir, style, vel) {
+    const rng = this.h.rng, o = this.h.options();
+    if (rng() >= lerp(MOTOR.slip, this.skill()) * (o.brushes ?? 1) * this.hum()) return false;
+    const r = rng(), v = this.v, open = this.h.open();
+    if (r < 0.33) return true;                       // missed entirely
+    if (r < 0.66) {                                  // caught the neighbour instead
+      const n = clamp(s + (rng() < 0.5 ? -1 : 1), 0, 5);
+      evs.push({ type: 'pluck', s: n, midi: v.frets[n] >= 0 ? open[n] + v.frets[n] : open[n], t: t + 0.01, dir, style, dead: v.frets[n] < 0, vel: clamp(vel * 0.6, 0.03, 1), pickPos: 0.2 });
+      return true;
+    }
+    evs.push({ type: 'pluck', s, midi: this.midiOf(s), t: t + 0.01 + 0.02 * rng(), dir, style, vel: clamp(vel * dB(-4.5), 0.03, 1), pickPos: 0.2 });
+    return true;                                     // late and soft
+  }
+
+  // an unintended contact with string s: a ringing string gets briefly damped; a quiet one gets a faint pluck
+  // (-20 to -30 dB); a string the fretting hand is muting gives a dead tick
+  graze(evs, s, t, style, vel, dir) {
+    if (s < 0 || s > 5 || this.melody.has(s)) return;
+    const v = this.v, open = this.h.open(), rng = this.h.rng;
+    const ringingNow = t - this.ringing[s] < 1.2;
+    if (v.frets[s] < 0) { evs.push({ type: 'pluck', s, midi: open[s], t, dir, style, dead: true, vel: clamp(vel * 0.25, 0.02, 0.3), pickPos: 0.2 }); return; }
+    if (ringingNow && rng() < 0.6) { evs.push({ type: 'touch', s, amt: 22, dur: 0.02 + 0.03 * rng(), t }); return; }
+    evs.push({ type: 'pluck', s, midi: open[s] + v.frets[s], t, dir, style, vel: clamp(vel * (0.08 + 0.07 * rng()), 0.02, 0.2), pickPos: 0.2 });
+    this.ringing[s] = t;
+  }
+
+  // a stroke across several strings (pick, nails, thumb); `dead` = palm muting them as it strikes; `keep`: how much
+  // of a ringing string survives the sweep
+  sweep(evs, order, t0, vel, dir, style, nail, palm, o, dead = false, total, keep) {
+    const rng = this.h.rng, v = this.v, open = this.h.open(), n = order.length, hum = this.hum();
+    const T = (total ?? (o.speed ?? 0.045) * (1.4 - 0.7 * this.vel)) * Math.max(1, n - 1) / 5 * (dir < 0 ? 0.8 : 1);
+    order.forEach((s, i) => {
+      if (this.melody.has(s)) return;
+      const frac = n > 1 ? i / (n - 1) : 0, md = v.frets[s] < 0 || dead;
+      const t = t0 + T * Math.pow(frac, 0.85) + gauss(rng) * 0.001 * hum;
+      evs.push({ type: 'pluck', s, midi: md ? open[s] : this.midiOf(s), t, dir, style, nail, dead: md, palm, keep,
+        bright: dir < 0 ? 1.5 : 1, vel: clamp(vel * (1 - 0.18 * frac) * this.velNoise() * (md ? 0.7 : 1), 0.03, 1),
+        pickPos: (o.pickPos || 0.2) * (1 + gauss(rng) * 0.04 * hum) });
+      this.ringing[s] = t;
+    });
+  }
+
+  // ---- melody over the pattern ----
+  // A note played while the pattern runs is a melody note: it takes a string near the hand (preferring the treble
+  // strings), the pattern leaves that string alone while the note is held, and the finger follows the classical
+  // crossing rules (alternate; to a higher string i->m->a, to a lower one a->m->i; Niedt) with a rest stroke when the
+  // next lower string isn't needed by the pattern.
+  playMelody(midi, vel, t) {
+    if (!this.v) return null;
+    const open = this.h.open(), S = this.style(), rng = this.h.rng;
+    let best = -1, bc = Infinity;
+    const fr = this.v.frets.filter(f => f > 0), pos = fr.length ? Math.min(...fr) : 0;
+    for (let s = 2; s < 6; s++) {
+      const f = midi - open[s];
+      if (f < 0 || f > 15) continue;
+      let c = (5 - s) * 0.6 + Math.abs(f - (pos + 1)) * 0.5 + (f === 0 ? -0.3 : 0);
+      if (s === this.roles.B || s === this.roles.A) c += 4;
+      if (c < bc) { bc = c; best = s; }
+    }
+    if (best < 0) return null;
+    const s = best, last = this.lastMel;
+    let finger;
+    if (!last) finger = s >= 5 ? 'a' : 'm';
+    else if (s > last.s) finger = last.finger === 'i' ? 'm' : 'a';
+    else if (s < last.s) finger = last.finger === 'a' ? 'm' : 'i';
+    else finger = last.finger === 'i' ? 'm' : 'i';
+    this.lastMel = { s, finger };
+    this.melody.set(s, midi);
+    const nb = s - 1, needed = nb === this.roles.T1 || nb === this.roles.T2 || nb === this.roles.T3;
+    const rest = !S.pick && s >= 3 && !needed && rng() < 0.7;
+    const F = MOTOR.fingers[finger];
+    const tt = t + F.bias + this.jitter(this.stepDur());
+    const evs = [];
+    if (S.pick) evs.push({ type: 'pluck', s, midi, t: tt, dir: 1, style: 'pick', vel: clamp(vel * this.velNoise(), 0.03, 1), pickPos: 0.2 });
+    else {
+      evs.push({ type: 'pluck', s, midi, t: tt, dir: -1, style: 'finger', nail: S.nail, rest, vel: clamp(vel * dB(1.5) * (rest ? dB(2.5) : 1) * this.velNoise(), 0.03, 1), pickPos: 0.19 });
+      if (rest && nb >= 0) evs.push({ type: 'touch', s: nb, amt: 45, dur: 0.08 + 0.08 * rng(), t: tt + 0.025 });
+    }
+    this.lastT[finger] = tt; this.ringing[s] = tt;
+    this.h.send(evs);
+    return s;
+  }
+  releaseMelody(s) { this.melody.delete(s); }
+}
+
+root.RightHand = RightHand;
+root.HAND_STYLES = STYLES;
+root.HAND_MOTOR = MOTOR;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+// Acoustic — performance layer: turns keyboard notes into what a guitarist's hands would do.
 //
 // 1. Gather: notes arriving within a short window (default 18 ms) are one chord.
 // 2. Voice: map the notes onto strings and frets.
@@ -1893,7 +2598,8 @@ class StrumEngine {
     this.onVoicing = opts.onVoicing || (() => {});
     this.rng = opts.rng || Math.random;
     this.o = {
-      mode: 'pick',          // 'pick' | 'finger'
+      mode: 'pick',          // 'pick' | 'finger' | 'pattern' (the right hand plays a style's pattern on held chords)
+      style: 'travis', bpm: 96, skill: 0.6, brushes: 1,
       voicing: 'played',     // 'played' | 'guitarize'
       direction: 'auto',     // 'auto' | 'down' | 'up' | 'alternate'
       speed: 0.055,          // seconds for a 6-string stroke at medium velocity (measured strums: 26-62 ms)
@@ -1919,6 +2625,8 @@ class StrumEngine {
     this.handPos = 0; this.lastShapeTime = -1;
     this.shape = null;
     this.lookahead = 0.006;
+    this.melodyKeys = new Map();
+    this.hand = root.RightHand ? new root.RightHand({ send: (e) => this.send(e), now: () => this.now(), rng: () => this.rng(), open: () => this.open(), options: () => this.o }) : null;
   }
   set(opts) { Object.assign(this.o, opts); }
   open() { return this.o.tuning.map(t => t + this.o.capo); }
@@ -1936,6 +2644,7 @@ class StrumEngine {
     }
   }
   noteOff(midi) {
+    if (this.melodyKeys.has(midi)) { this.hand.releaseMelody(this.melodyKeys.get(midi)); this.melodyKeys.delete(midi); return; }
     const i = this.pending.findIndex(p => p.midi === midi);
     if (i >= 0) { // released before the chord was even voiced: play it anyway, then let it go
       this.pending[i].releaseAfter = true;
@@ -1945,6 +2654,7 @@ class StrumEngine {
   }
   setSustain(on) {
     this.sustain = on;
+    if (!on && this.hand && this.hand.running && ![...this.groups.values()].some(x => x.keys.size)) setTimeout(() => { if (!this.sustain && ![...this.groups.values()].some(x => x.keys.size)) this.hand.stop(); }, this.o.hold * 1000);
     if (!on) for (const [id, g] of this.groups) if (g.keys.size === 0) this.dampGroup(id);
   }
 
@@ -1952,6 +2662,12 @@ class StrumEngine {
     clearTimeout(this.timer); this.timer = null;
     const notes = this.pending; this.pending = [];
     if (!notes.length) return;
+    // a single note over a running pattern is melody, taken by the plucking fingers on a string of its own
+    if (notes.length === 1 && this.o.mode === 'pattern' && this.hand && this.hand.running) {
+      const n = notes[0], t0m = Math.max(this.now() + this.lookahead, n.t + this.o.gather * 0.5);
+      const s = this.hand.playMelody(this.fold(n.midi, this.open()), n.vel, t0m);
+      if (s != null) { this.melodyKeys.set(n.midi, s); if (n.releaseAfter) setTimeout(() => this.noteOff(n.midi), 120); return; }
+    }
     const t0 = Math.max(this.now() + this.lookahead, Math.min(...notes.map(n => n.t)) + this.o.gather);
     const vel = Math.max(...notes.map(n => n.vel));
     const midis = notes.map(n => n.midi);
@@ -1978,7 +2694,8 @@ class StrumEngine {
     const evs = [];
     if (shift >= 2 && t0 - this.lastShapeTime < 1.5) this.squeaks(evs, v, shift, t0);
     this.lastShapeTime = t0;
-    if (sounding.length === 1) this.single(evs, sounding[0], v.map[sounding[0]], vel, t0);
+    if (this.o.mode === 'pattern' && this.hand && sounding.length > 1) this.hand.chord(v, vel, t0);
+    else if (sounding.length === 1) this.single(evs, sounding[0], v.map[sounding[0]], vel, t0);
     else this.chord(evs, v, vel, t0);
     this.send(evs);
     // keys that were released during the gather window
@@ -2027,6 +2744,9 @@ class StrumEngine {
     const g = this.groups.get(h.group);
     if (!g) return;
     g.keys.delete(midi);
+    if (this.hand && this.hand.running && !this.sustain && ![...this.groups.values()].some(x => x.keys.size)) {
+      setTimeout(() => { if (!this.sustain && ![...this.groups.values()].some(x => x.keys.size)) this.hand.stop(); }, this.o.hold * 1000);
+    }
     if (this.o.letRing || this.sustain) return;
     if (this.o.voicing === 'guitarize' && this.groups.get(h.group).keys.size) return; // shape held while any key is down
     if (this.o.voicing === 'guitarize') { this.later(() => this.dampGroup(h.group), h.group); return; }
@@ -2119,7 +2839,7 @@ class StrumEngine {
       const jitter = gauss(this.rng) * 0.0012 * h;
       const tt = t + base + catchAcc + jitter;
       // each string resists the pick briefly; heavier strings longer, harder strokes push through faster
-      catchAcc += (0.0009 + 0.0007 * (5 - s) / 5) * (1.1 - 0.6 * vel) * (1 + 0.3 * gauss(this.rng) * h);
+      catchAcc += (0.0009 + 0.0007 * (5 - s) / 5) * (1.1 - 0.6 * vel) * (1 + 0.3 * gauss(this.rng) * h) * (this.o.pickHold || 1);
       const fret = v.frets[s];
       const dead = fret < 0;
       // recorded upstrokes are only ~1.5 dB softer than downstrokes and brighter (treble strings, pick edge)
@@ -2195,6 +2915,7 @@ class StrumEngine {
       pickPos: this.o.pickPos, t: this.now() + 0.003 }]);
   }
   allOff() {
+    if (this.hand) this.hand.stop();
     this.pending = []; this.held.clear(); this.groups.clear(); this.owner.fill(null);
     this.send([{ type: 'allOff', t: this.now() }]);
   }
@@ -2452,6 +3173,9 @@ const sliders = {
   updepth: { out: v => v, apply: v => strum.set({ upDepth: v / 100 }) },
   gather: { out: v => v + ' ms', apply: v => strum.set({ gather: v / 1000 }) },
   keyvel: { out: v => v, apply: () => {} },
+  bpm: { out: v => v, apply: v => strum.set({ bpm: v }) },
+  skill: { out: v => v, apply: v => strum.set({ skill: v / 100 }) },
+  brushes: { out: v => v + '%', apply: v => strum.set({ brushes: v / 100 }) },
   capo: { out: v => +v ? 'fret ' + v : 'none', apply: v => { capo = +v; strum.set({ capo }); setEngine({ capo }); } },
   pickpos: { out: v => v + '%', apply: v => strum.set({ pickPos: v / 100 }) },
   bright: { out: v => v < 25 ? 'dead' : v < 50 ? 'played in' : v < 80 ? 'fresh' : 'new', apply: v => setEngine({ brightness: v / 100 }) },
@@ -2475,7 +3199,7 @@ function bindSliders() {
 function applyAll() {
   for (const id in sliders) sliders[id].apply(+$(id).value);
   setEngine({ preset: $('preset').value, tuning, capo, quality });
-  applyScene();
+  applyScene(); applyPick();
 }
 function bindSegs() {
   document.querySelectorAll('.seg').forEach(seg => {
@@ -2484,6 +3208,7 @@ function bindSegs() {
     const set = (v) => {
       seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
       strum.set({ [opt]: v }); store.set('o.' + opt, v);
+      if (opt === 'mode') { $('patternCtl').hidden = v !== 'pattern'; if (v !== 'pattern' && strum.hand) strum.hand.stop(); }
     };
     seg.querySelectorAll('button').forEach(b => { b.type = 'button'; b.addEventListener('click', () => set(b.dataset.v)); });
     set(val);
@@ -2510,6 +3235,55 @@ function fillSelect(id, entries, val) {
   const el = $(id); el.innerHTML = '';
   for (const [k, v] of entries) { const o = document.createElement('option'); o.value = k; o.textContent = v; el.appendChild(o); }
   el.value = val;
+}
+// ---------- pick ----------
+const pick = { type: store.get('pk.type', 'cell71'), grip: store.get('pk.grip', 'normal'), angle: +store.get('pk.angle', 20), Es: store.get('pk.Es', null) };
+// hardness slider: log surface modulus from 1 MPa (felt) to 200 GPa (steel); starts at the material's own value
+const hardToEs = (v) => Math.pow(10, 6 + v / 100 * 5.3), esToHard = (Es) => Math.round((Math.log10(Es) - 6) / 5.3 * 100);
+function showHard() {
+  const P = GUITAR_PICKS[pick.type] || GUITAR_PICKS.cell71, Es = pick.Es || P.Es || P.E;
+  $('pickHard').value = esToHard(Es);
+  $('pickHardOut').textContent = guitarShore.fromEs(Es).replace('harder than Shore D 90', 'D90+') .replace('Shore ', '') + (pick.Es ? '' : '*');
+  $('pickHard').title = guitarShore.fromEs(Es) + (pick.Es ? '' : ' (the material\'s own)');
+}
+function applyPick() {
+  setEngine({ pick: Object.assign({}, pick) });
+  // a pick that lets go of each string sooner also passes through a strum faster (mid-neck string, medium attack)
+  const M = guitarPickModel, P = GUITAR_PICKS;
+  const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip, pick.Es), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
+  strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
+}
+function bindHandStyle() {
+  fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
+  strum.set({ style: $('handStyle').value });
+  $('handStyle').addEventListener('change', () => {
+    const k = $('handStyle').value; strum.set({ style: k }); store.set('o.style', k);
+    // each style starts at its typical tempo unless a MIDI clock is setting it
+    const clocked = clockTicks.length === 25 && performance.now() - clockTicks[24] < 1000;
+    if (!clocked && HAND_STYLES[k].tempo) { $('bpm').value = HAND_STYLES[k].tempo; $('bpmOut').textContent = HAND_STYLES[k].tempo; strum.set({ bpm: HAND_STYLES[k].tempo }); store.set('s.bpm', HAND_STYLES[k].tempo); }
+  });
+}
+// MIDI clock (24 per quarter note): tempo from the spacing of the last 24 ticks; Start realigns the pattern grid
+const clockTicks = [];
+function onClock(st, ts) {
+  if (st === 0xfa) { clockTicks.length = 0; if (strum.hand && strum.hand.running) strum.hand.realign(engineTime()); return; }
+  if (st !== 0xf8) return;
+  clockTicks.push(ts); if (clockTicks.length > 25) clockTicks.shift();
+  if (clockTicks.length === 25) {
+    const bpm = 60000 / (clockTicks[24] - clockTicks[0]);
+    if (bpm > 30 && bpm < 300 && Math.abs(bpm - (strum.o.bpm || 0)) > 0.3) {
+      strum.set({ bpm }); $('bpm').value = Math.round(bpm); $('bpmOut').textContent = Math.round(bpm) + ' (clock)';
+    }
+  }
+}
+function bindPick() {
+  fillSelect('pickType', Object.entries(GUITAR_PICKS).map(([k, v]) => [k, v.name]), pick.type);
+  $('grip').value = pick.grip; $('pickAngle').value = pick.angle; $('pickAngleOut').textContent = pick.angle + '°';
+  showHard();
+  $('pickType').addEventListener('change', () => { pick.type = $('pickType').value; pick.Es = null; store.set('pk.type', pick.type); store.set('pk.Es', null); showHard(); applyPick(); });
+  $('pickHard').addEventListener('input', () => { pick.Es = hardToEs(+$('pickHard').value); store.set('pk.Es', pick.Es); showHard(); applyPick(); });
+  $('grip').addEventListener('change', () => { pick.grip = $('grip').value; store.set('pk.grip', pick.grip); applyPick(); });
+  $('pickAngle').addEventListener('input', () => { pick.angle = +$('pickAngle').value; $('pickAngleOut').textContent = pick.angle + '°'; store.set('pk.angle', pick.angle); applyPick(); });
 }
 function bindSpace() {
   const S = SP();
@@ -2622,6 +3396,19 @@ function renderChords() {
 }
 async function playChordPad(name, dir) {
   await start();
+  // Pattern mode: a pad latches the right hand's pattern on that chord; tapping the playing chord again stops it
+  if (strum.o.mode === 'pattern' && strum.hand) {
+    if (strum.hand.running && activeChord === name) {
+      strum.hand.stop(); activeChord = null;
+      document.querySelectorAll('.chord').forEach(c => c.classList.remove('on'));
+      return;
+    }
+    activeChord = name;
+    document.querySelectorAll('.chord').forEach(c => c.classList.toggle('on', c.firstChild.textContent === name));
+    strum.setShape(CHORD_SHAPES[name].slice());
+    strum.hand.chord({ frets: strum.shape }, +$('keyvel').value / 100, engineTime() + 0.01);
+    return;
+  }
   activeChord = name;
   document.querySelectorAll('.chord').forEach(c => c.classList.toggle('on', c.firstChild.textContent === name));
   const f = CHORD_SHAPES[name].slice();
@@ -2756,6 +3543,7 @@ function onMidi(e) {
   const sel = $('midiIn').value;
   if (sel !== 'all' && e.target.id !== sel) return;
   const [st, d1, d2] = e.data; const cmd = st & 0xf0;
+  if (st >= 0xf8) { onClock(st, e.timeStamp); return; }
   const t = ctx ? ctx.currentTime + Math.min(0, (e.timeStamp - performance.now()) / 1000) : undefined;
   if (cmd === 0x90 && d2 > 0) { start(); noteOn(d1, Math.pow(d2 / 127, 0.9), t); }
   else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) noteOff(d1);
@@ -2919,7 +3707,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); bindSpace(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); bindPick(); bindHandStyle(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });
