@@ -133,7 +133,7 @@ function esToShore(Es) {
 // Pitch of the outer winding (wrap-wire diameter), m, strings low E..G; plain strings have none. Steel: phosphor-bronze
 // 12-53 set; nylon: silver-plated copper basses (finer wire, higher squeak).
 const WIND_PITCH = { steel: [0.36e-3, 0.30e-3, 0.24e-3, 0.18e-3, 0, 0], nylon: [0.16e-3, 0.14e-3, 0.12e-3, 0, 0, 0] };
-let FRIC_GAIN = 0.1, FRIC_AIR = 0.004;   // axial force into the string; share heard straight from the fingertip
+let FRIC_GAIN = 0.4, FRIC_AIR = 0.008, FRIC_NORMAL = 0.02, FRIC_MU = [0.56, 0.5, 0.03, 1.0];   // static, kinetic, Stribeck speed (m/s), skin damping ratio   // axial force into the string; share heard straight from the fingertip
 const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip length beyond the fingers
 
 // Quasi-static release: the string (lateral stiffness Ks = T L / (x (L - x))) pushes on the pick face; the pick bends
@@ -822,50 +822,142 @@ class GuitarEngine {
   }
 
   // ---------- the fretting hand's own sounds ----------
-  // A fingertip moving along a string. On a wound string every wrap of the winding it passes is a small stick-slip
-  // event: a train of friction pulses at f = |v| / winding pitch (Pakarinen, Penttinen & Bank 2007: the noise is
-  // lowpass, with time-varying harmonics set by the sliding speed and fixed peaks from the string's longitudinal
-  // modes). Friction acts along the string's axis, so the pulses drive the string's own longitudinal modes, which
-  // push on the bridge like every other sound here; a little is heard straight from the fingertip. Plain strings
-  // only hiss faintly. The hand follows a minimum-jerk path (Flash & Hogan 1985), so the squeak's pitch rises and
-  // falls with its speed. ev: s, x0, x1 (m from the nut), dur (s, whole movement), seg [from, to] (part of the
-  // movement rendered: departure / arrival), p0, p1 (finger pressure at the segment's ends, 0..1).
+  // A finger pad sliding along a string, simulated as contact mechanics rather than played as a sound:
+  //  - the string's surface: on a wound string, a corrugation of round wrap wires (pitch = wire diameter), with a
+  //    little wire-to-wire variation and wear that stay put along the string; on any string, micro-roughness;
+  //  - the pad touches the string only along its fingerprint ridges (~0.46 mm apart, Scheibert et al. 2009), which
+  //    cross the string at an angle, spread over a 5-8 mm contact, loaded most in the middle (elliptical pressure);
+  //  - each ridge is a small viscoelastic finger of skin: normally it presses into the corrugation but can't follow
+  //    it quickly (a lowpass of the skin's own stiffness and damping); tangentially it is a spring-mass that sticks
+  //    to the string until the force exceeds static friction, then slips with kinetic friction, and climbing a wire
+  //    pushes back on it;
+  //  - the hand moves on a minimum-jerk path (Flash & Hogan 1985) with physiological tremor (8-12 Hz) in its
+  //    position and pressure.
+  // The forces of all ridges are summed. Because ridges and wires are spaced differently, their contributions
+  // partly cancel and partly beat, and stick-slip makes each crossing different: a rough rub whose pitch follows the
+  // speed, as Pakarinen, Penttinen & Bank (2007) measured, rather than a clean buzz. The axial force drives the
+  // string's longitudinal modes (and so the bridge, body, mics and room); the fluctuating pressure into the string
+  // pushes on the bridge transversally. Gestures run block by block inside the render loop.
+  // ev: s, x0, x1 (m from the nut), dur (s, whole movement), seg [from, to] (part rendered), p0, p1 (pressure 0..1).
   friction(ev) {
     const st = this.strings[ev.s]; if (!st) return;
-    const sr = this.sr, P = this.P, ph = P.strings[ev.s];
-    const wound = !!ph.wound, nylon = this.params.preset === 'classical';
-    const pw = WIND_PITCH[nylon ? 'nylon' : 'steel'][ev.s] || 0.25e-3;
-    const seg = ev.seg || [0, 1], dur = Math.max(0.02, ev.dur || 0.15), dx = (ev.x1 ?? 0.05) - (ev.x0 ?? 0);
-    const n = Math.min(this.RING - 256, Math.round(dur * (seg[1] - seg[0]) * sr));
-    if (n < 8) return;
-    const amt = this.params.noise * (ev.amt ?? 1) * (wound ? 1 : 0.18) * (nylon ? 0.8 : 1);
-    if (amt <= 0) return;
-    const ext = this.lonExt[ev.s], start = this.clock & this.RMASK, pan = -0.35 + (ev.s - 2.5) / 12;
-    let ph0 = this.rng(), lp = 0, lp2 = 0;
-    for (let k = 0; k < n; k++) {
-      const u = k / n, tau = seg[0] + (seg[1] - seg[0]) * u;
-      const vel = Math.abs(dx) / dur * 30 * tau * tau * (1 - tau) * (1 - tau);           // minimum-jerk speed, m/s
-      const pr = (ev.p0 ?? 0.5) + ((ev.p1 ?? 0.5) - (ev.p0 ?? 0.5)) * u;
-      const env = Math.min(1, k / 96, (n - k) / 96);
-      let f = 0;
-      if (wound) {
-        // one grab-and-release per wrap: the fingertip sinks into a groove and is pushed out by the next wire, a
-        // smooth force pulse over ~40% of the passing period (a harmonic series at |v| / pitch). The spacing
-        // wanders a little and every grab is a bit different.
-        // skin is soft and uneven and several ridges of the fingerprint ride the winding at once, so the grabs are
-        // irregular in spacing, width and strength: a rough rub with a pitch in it, not a clean buzz
-        ph0 += vel / pw / sr * (1 + 0.7 * (this.rng() - 0.5));
-        if (ph0 >= 1) { ph0 -= Math.floor(ph0); st.fricA = amt * pr * Math.pow(vel, 0.6) * (0.3 + 1.4 * this.rng()); st.fricW = 0.3 + 0.4 * this.rng(); }
-        const w = st.fricW || 0.4;
-        if (ph0 < w) f += (st.fricA || 0) * 0.5 * (1 - Math.cos(TAU * ph0 / w)) * (0.4 + 1.2 * this.rng());
+    const sr = this.sr, ph = this.P.strings[ev.s], rng = () => this.rng();
+    const nylon = this.params.preset === 'classical', wound = !!ph.wound;
+    const seg = ev.seg || [0, 1], dur = Math.max(0.02, ev.dur || 0.15);
+    const n = Math.round(dur * (seg[1] - seg[0]) * sr);
+    const amt = this.params.noise * (ev.amt ?? 1);
+    if (n < 8 || amt <= 0) return;
+    const pw = WIND_PITCH[nylon ? 'nylon' : 'steel'][ev.s] || 0;
+    // the winding's profile over one wire, as a lookup table: round wires side by side, seen through a ridge's
+    // ~0.18 mm contact width (which smooths the corrugation: Fourier terms times sinc(n w / p))
+    const TB = 256, prof = new Float64Array(TB + 1), slope = new Float64Array(TB + 1);
+    if (wound) {
+      const rw = pw / 2, wr = 0.18e-3, c = [0.42, -0.09, 0.04];
+      for (let i = 0; i <= TB; i++) {
+        const u = i / TB; let h = 0, d = 0;
+        for (let m = 1; m <= 3; m++) {
+          const z = Math.PI * m * wr / pw, sc = Math.abs(Math.sin(z) / z), b = rw * c[m - 1] * sc;
+          h += b * Math.cos(TAU * m * (u - 0.5)); d += -b * TAU * m / pw * Math.sin(TAU * m * (u - 0.5));
+        }
+        prof[i] = h; slope[i] = d;
       }
-      // the smooth part of the rub: noise lowpassed at a cutoff that rises with speed
-      const c = Math.min(0.9, (250 + 3500 * vel) * TAU / sr);
-      lp += ((this.rng() * 2 - 1) - lp) * c; lp2 += (lp - lp2) * c;
-      f += lp2 * amt * pr * vel * 0.6;
-      f *= env;
-      ext[(start + k) & this.RMASK] += f * FRIC_GAIN;
-      this.dirL[(start + k) & this.RMASK] += f * FRIC_AIR * (1 - pan); this.dirR[(start + k) & this.RMASK] += f * FRIC_AIR * (1 + pan);
+    }
+    // the pad: contact length grows with load; ridges at their spacing along the string, slightly irregular
+    const pMean = Math.max(0.05, ((ev.p0 ?? 0.5) + (ev.p1 ?? 0.5)) / 2);
+    const a = 0.005 + 0.003 * Math.cbrt(pMean), lamS = 0.46e-3 * (0.95 + 0.1 * rng()) / Math.sin((50 + 40 * rng()) * Math.PI / 180);
+    const ridges = [];
+    for (let o = -a / 2 + lamS * rng(); o < a / 2; o += lamS * (0.92 + 0.16 * rng())) {
+      const w = Math.sqrt(Math.max(0, 1 - (2 * o / a) ** 2));
+      const fr = 1400 * (0.8 + 0.4 * rng()), kt = 160, mt = kt / (TAU * fr) ** 2;
+      ridges.push({ o, w, kt, mt, ct: 2 * (FRIC_MU[3] ?? 0.8) * Math.sqrt(kt * mt), y: 0, vy: 0, stick: true, h1: 0, h2: 0 });
+    }
+    const wsum = ridges.reduce((t, r) => t + r.w, 0) || 1;
+    for (const r of ridges) r.w /= wsum;
+    if (!this.fric) this.fric = [];
+    this.fric.push({ s: ev.s, n, k: 0, seg, dur, x0: ev.x0 ?? 0.03, dx: (ev.x1 ?? 0.08) - (ev.x0 ?? 0.03),
+      p0: ev.p0 ?? 0.5, p1: ev.p1 ?? 0.5, amt, wound, pw, prof, slope, ridges,
+      wearSeed: (ev.s + 1) * 7919, trF: 8 + 4 * rng(), trP: rng() * TAU, trA: 15e-6 + 25e-6 * rng(),
+      // a corrective sub-movement near the end of the reach (Meyer et al. 1988), and the skin's grab-and-give
+      subA: (rng() - 0.3) * 0.06, subC: 0.78 + 0.12 * rng(), vn: 0, vn2: 0, vnC: 1 - Math.exp(-TAU * 35 / (2 * sr)),
+      scale: this.P.scale,
+      fc: 1 - Math.exp(-TAU * 900 * (0.8 + 0.4 * rng()) / (2 * sr)), hpA: 0, hpN: 0, xA: 0, xN: 0,
+      pan: -0.35 + (ev.s - 2.5) / 12 });
+  }
+  // wear and wire-to-wire variation, fixed along each string (smoothly interpolated between wraps)
+  wear(seed, k) { const h = (x) => { let t = (x * 374761393 + seed * 668265263) | 0; t = (t ^ (t >>> 13)) * 1274126177 | 0; return ((t ^ (t >>> 16)) >>> 0) / 4294967296; }; return 0.82 + 0.33 * h(k); }
+  runFriction(nBlock) {
+    const sr = this.sr, OS = 1, dt = 1 / (sr * OS), t0 = this.clock;   // ridges are heavily damped: stable at the audio rate
+    const muS = FRIC_MU[0], muK = FRIC_MU[1], vS = FRIC_MU[2];   // skin on metal: small static-kinetic gap, Stribeck speed
+    for (let g = this.fric.length - 1; g >= 0; g--) {
+      const G = this.fric[g], ext = this.lonExt[G.s];
+      const cnt = Math.min(nBlock, G.n - G.k);
+      for (let i = 0; i < cnt; i++, G.k++) {
+        let Fax = 0, Fn = 0;
+        for (let q = 0; q < OS; q++) {
+          const u = (G.k + q / OS) / G.n, tau = G.seg[0] + (G.seg[1] - G.seg[0]) * u, tt = (G.k + q / OS) / sr;
+          // minimum-jerk path plus tremor
+          const sm = 10 * tau ** 3 - 15 * tau ** 4 + 6 * tau ** 5, dsm = 30 * tau * tau * (1 - tau) * (1 - tau);
+          const trem = Math.sin(TAU * G.trF * tt + G.trP);
+          const zb = (tau - G.subC) / 0.12, bump = Math.exp(-zb * zb), dbump = -2 * zb / 0.12 * bump;
+          G.vn += ((this.rng() * 2 - 1) - G.vn) * G.vnC; G.vn2 += (G.vn - G.vn2) * G.vnC;   // slow speed wobble
+          const xf = G.x0 + G.dx * (sm + G.subA * bump) + G.trA * trem;
+          const vf = (G.dx * (dsm + G.subA * dbump) / G.dur) * (1 + 2.5 * G.vn2) + G.trA * TAU * G.trF * Math.cos(TAU * G.trF * tt + G.trP);
+          const press = (G.p0 + (G.p1 - G.p0) * u) * (1 + 0.06 * trem);
+          const N0 = 0.1 + 1.8 * Math.max(0, press);                  // total normal force, N
+          const d0 = 1.5e-4 * Math.cbrt(Math.max(0.02, press));       // skin indentation, m
+          // nearest fret wire to the finger (worn patches of winding sit there)
+          const fn = Math.round(Math.log2(G.scale / Math.max(1e-3, G.scale - xf)) * 12);
+          const fxw = fn >= 1 && fn <= 9 ? G.scale * (1 - Math.pow(2, -fn / 12)) : -1, wd = 0.75 - 0.06 * fn;
+          for (const r of G.ridges) {
+            const xs = xf + r.o + r.y;
+            // surface height and slope under this ridge (corrugation x wear, plus micro-roughness)
+            let h = 0, hp = 0;
+            if (G.wound) {
+              const pos = xs / G.pw, kk = Math.floor(pos), fr = pos - kk, ti = fr * 256, i0 = ti | 0, f = ti - i0;
+              let wv = this.wear(G.wearSeed, kk) + (this.wear(G.wearSeed, kk + 1) - this.wear(G.wearSeed, kk)) * fr;
+              // the winding is worn flat where the strings are pressed onto the frets (most on the first frets)
+              if (fxw > 0) { const dfx = (xs - fxw) / 1.5e-3; if (dfx > -4 && dfx < 4) wv *= 1 - wd * Math.exp(-dfx * dfx); }
+              h = (G.prof[i0] + (G.prof[i0 + 1] - G.prof[i0]) * f) * wv;
+              hp = (G.slope[i0] + (G.slope[i0 + 1] - G.slope[i0]) * f) * wv;
+            }
+            const rk = Math.floor(xs / 4e-5), rf = xs / 4e-5 - rk, ra = this.wear(G.wearSeed + 31, rk), rb = this.wear(G.wearSeed + 31, rk + 1);
+            h += 1.2e-6 * (ra + (rb - ra) * rf - 0.985); hp += 1.2e-6 * (rb - ra) / 4e-5;
+            // the skin follows the surface sluggishly
+            r.h1 += (h - r.h1) * G.fc; r.h2 += (r.h1 - r.h2) * G.fc;
+            const Nj = N0 * r.w * Math.max(0, 1 + r.h2 / d0);
+            const Fg = Nj * hp;                                         // a wire's flank pushes back on the ridge
+            let Fs;                                                     // force the ridge puts on the string, axially
+            if (r.stick) {
+              r.vy = -vf; r.y += r.vy * dt;
+              const hold = r.kt * r.y + r.ct * r.vy;                    // friction needed to keep the ridge in place
+              Fs = -hold;
+              if (Math.abs(hold + Fg) > muS * Nj) r.stick = false;
+            }
+            if (!r.stick) {
+              // just broken free (relative speed 0): it moves the way the finger is going
+              const vt = vf + r.vy, sg = Math.abs(vt) > 1e-7 ? (vt > 0 ? 1 : -1) : (vf >= 0 ? 1 : -1);
+              const mu = muK + (muS - muK) * Math.exp(-((vt / vS) ** 2));
+              const Ff = -sg * mu * Nj;
+              r.vy += (-r.kt * r.y - r.ct * r.vy - Fg + Ff) / r.mt * dt;
+              r.y += r.vy * dt;
+              const vt2 = vf + r.vy;
+              if (Math.abs(vt) > 1e-7 && vt2 * vt <= 0) { r.stick = true; r.vy = -vf; }
+              Fs = Fg - Ff;
+            }
+            Fax += Fs; Fn += Nj;
+          }
+        }
+        Fax /= OS; Fn /= OS;
+        // remove the steady parts (constant drag, constant pressure), keep what fluctuates
+        G.hpA = 0.995 * (G.hpA + Fax - G.xA); G.xA = Fax;
+        G.hpN = 0.995 * (G.hpN + Fn - G.xN); G.xN = Fn;
+        const env = Math.min(1, G.k / 64, (G.n - G.k) / 64);
+        const idx = (t0 + i) & this.RMASK, ax = G.hpA * env * G.amt, nn = G.hpN * env * G.amt;
+        ext[idx] += ax * FRIC_GAIN;
+        this.bodyIn[idx] += nn * FRIC_NORMAL;
+        this.dirL[idx] += ax * FRIC_AIR * (1 - G.pan); this.dirR[idx] += ax * FRIC_AIR * (1 + G.pan);
+      }
+      if (G.k >= G.n) this.fric.splice(g, 1);
     }
   }
 
@@ -1026,6 +1118,7 @@ class GuitarEngine {
     const stDecay = Math.exp(-1 / (0.6 * sr));
     const lpC = 1 - Math.exp(-TAU * 3000 / sr), hpC = Math.exp(-TAU * 60 / sr);
     const ring = this.cplRing, t0 = this.clock;
+    if (this.fric && this.fric.length) this.runFriction(n);
     // 1) strings, oscillator-major: each component runs the whole segment from registers
     for (let j = 0; j < 6; j++) {
       const s = S[j], FY = this.FY[j], FZ = this.FZ[j], U = this.U;
@@ -1200,7 +1293,7 @@ class GuitarEngine {
   panicReset() {
     for (const s of this.strings) for (const v of s.voices) { v.y1.fill(0); v.y2.fill(0); v.nact = 0; }
     this.body.reset(); this.staticZ = this.staticY = 0; this.radL = this.radR = this.radXL = this.radXR = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
-    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0); this.eqZ.fill(0);
+    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0); this.eqZ.fill(0); this.fric = [];
   }
 
   meters() {
@@ -1215,7 +1308,7 @@ root.GUITAR_HOLDS = HOLDS;
 root.GUITAR_PICKS = PICKS;
 root.GUITAR_GRIPS = GRIPS;
 root.guitarPickModel = pickModel;
-root.guitarFriction = (g, a) => { FRIC_GAIN = g; FRIC_AIR = a; };
+root.guitarFriction = (g, a, n, mu) => { FRIC_GAIN = g; FRIC_AIR = a; if (n != null) FRIC_NORMAL = n; if (mu) FRIC_MU = mu; };
 root.guitarShore = { toEs: shoreToEs, fromEs: esToShore };
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {
