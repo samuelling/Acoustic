@@ -98,6 +98,7 @@ No sample or noise layer is added on top. The incidental sounds come from the ha
   - The force acts along the string's axis, so it drives the string's own longitudinal modes. These push on the bridge, and from there the body, mics and room carry it like every other sound; a little is heard straight from the fingertip.
   - This reproduces what Pakarinen, Penttinen & Bank (2007) measured: lowpass noise with time-varying harmonics set by the sliding speed, and fixed peaks from the longitudinal modes.
   - Plain strings only hiss faintly.
+- **Modulation.** *Finger noise* (0–200%, 100% = the level measured in GuitarSet) scales the finger sound live; MIDI CC2 (breath) rides it. Aftertouch (channel or polyphonic) sets how hard the finger presses the string while it slides, up to 2.5×. That changes the contact itself (more ridges catch: louder and grittier), and it takes effect mid-slide.
 - **Calibrated against real slides.** GuitarSet (Xi et al. 2018, CC BY 4.0) recorded an acoustic steel-string guitar with a microphone and annotated every string's pitch. `proto/gs_slides.py` finds 437 genuine slides on the wound strings (≥ 2 semitones, 15–150 ms per semitone, no instantaneous jumps): median 168 ms for 2.5 frets (10–90%: 70–325 ms).
   - `proto/gs_squeak.py` masks every harmonic of every sounding note and measures what the slide adds. In 226 slides with a clear finger sound, it sits ~21 dB below the note's harmonics and is bright: concentrated at 4–8 kHz, with a centroid near 6 kHz *whatever the hand speed*. Below 4 kHz the note's own partials hide it.
   - `test/gs_model_slides.js` plays the same slides (string, frets, duration) through the synth and the same analysis is applied, using the synth's own pitch track. The fit showed:
@@ -126,7 +127,7 @@ No sample or noise layer is added on top. The incidental sounds come from the ha
 
 ## Controls
 
-- MIDI: notes, sustain (CC64 = let ring / latch the pattern), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st), portamento time (CC5 = slide speed), portamento on/off (CC65 = legato slides), clock (pattern tempo).
+- MIDI: notes, sustain (CC64 = let ring / latch the pattern), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st), portamento time (CC5 = slide speed), portamento on/off (CC65 = legato slides), breath (CC2 = finger-noise level), aftertouch (finger pressure while sliding), clock (pattern tempo).
 - Computer keys: `A W S E D F T G Y H U J K O L P ;` play notes, `Z`/`X` octave, `Space` sustain, `Shift` palm mute, `1`–`0` chord pads, `[` `]` down/up strum.
 - Phone: chord pads, ↓/↑ pads, or swipe across the strings (down the screen = downstroke). Tap the neck to fret a string.
 - Record captures the exact output to a 48 kHz WAV.
