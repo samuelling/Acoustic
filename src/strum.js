@@ -410,7 +410,7 @@ class StrumEngine {
       const jitter = gauss(this.rng) * 0.0012 * h;
       const tt = t + base + catchAcc + jitter;
       // each string resists the pick briefly; heavier strings longer, harder strokes push through faster
-      catchAcc += (0.0009 + 0.0007 * (5 - s) / 5) * (1.1 - 0.6 * vel) * (1 + 0.3 * gauss(this.rng) * h);
+      catchAcc += (0.0009 + 0.0007 * (5 - s) / 5) * (1.1 - 0.6 * vel) * (1 + 0.3 * gauss(this.rng) * h) * (this.o.pickHold || 1);
       const fret = v.frets[s];
       const dead = fret < 0;
       // recorded upstrokes are only ~1.5 dB softer than downstrokes and brighter (treble strings, pick edge)

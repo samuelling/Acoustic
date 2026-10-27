@@ -255,7 +255,7 @@ function bindSliders() {
 function applyAll() {
   for (const id in sliders) sliders[id].apply(+$(id).value);
   setEngine({ preset: $('preset').value, tuning, capo, quality });
-  applyScene();
+  applyScene(); applyPick();
 }
 function bindSegs() {
   document.querySelectorAll('.seg').forEach(seg => {
@@ -290,6 +290,22 @@ function fillSelect(id, entries, val) {
   const el = $(id); el.innerHTML = '';
   for (const [k, v] of entries) { const o = document.createElement('option'); o.value = k; o.textContent = v; el.appendChild(o); }
   el.value = val;
+}
+// ---------- pick ----------
+const pick = { type: store.get('pk.type', 'cell71'), grip: store.get('pk.grip', 'normal'), angle: +store.get('pk.angle', 20) };
+function applyPick() {
+  setEngine({ pick: Object.assign({}, pick) });
+  // a pick that lets go of each string sooner also passes through a strum faster (mid-neck string, medium attack)
+  const M = guitarPickModel, P = GUITAR_PICKS;
+  const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
+  strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
+}
+function bindPick() {
+  fillSelect('pickType', Object.entries(GUITAR_PICKS).map(([k, v]) => [k, v.name]), pick.type);
+  $('grip').value = pick.grip; $('pickAngle').value = pick.angle; $('pickAngleOut').textContent = pick.angle + '°';
+  $('pickType').addEventListener('change', () => { pick.type = $('pickType').value; store.set('pk.type', pick.type); applyPick(); });
+  $('grip').addEventListener('change', () => { pick.grip = $('grip').value; store.set('pk.grip', pick.grip); applyPick(); });
+  $('pickAngle').addEventListener('input', () => { pick.angle = +$('pickAngle').value; $('pickAngleOut').textContent = pick.angle + '°'; store.set('pk.angle', pick.angle); applyPick(); });
 }
 function bindSpace() {
   const S = SP();
@@ -699,7 +715,7 @@ function bindNeck() {
 // ---------- boot ----------
 function boot() {
   resize(); window.addEventListener('resize', resize);
-  bindSliders(); bindSegs(); bindSpace(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
+  bindSliders(); bindSegs(); bindSpace(); bindPick(); renderChords(); buildKeys(); bindKeys(); bindQwerty(); bindNeck();
   $('startBtn').addEventListener('click', start);
   $('recBtn').addEventListener('click', toggleRecord);
   $('panicBtn').addEventListener('click', () => { strum.allOff(); send([{ type: 'panic', t: engineTime() }]); });

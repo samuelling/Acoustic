@@ -56,6 +56,9 @@
       <div class="row wide"><label>Technique</label><div class="seg" data-opt="mode"><button data-v="pick">Pick strum</button><button data-v="finger">Fingerstyle</button></div></div>
       <div class="row wide"><label>Voicing</label><div class="seg" data-opt="voicing"><button data-v="played">As played</button><button data-v="guitarize">Guitar shape</button></div></div>
       <div class="row wide"><label>Direction</label><div class="seg" data-opt="direction"><button data-v="auto">Auto</button><button data-v="down">Down</button><button data-v="up">Up</button><button data-v="alternate">Alternate</button></div></div>
+      <div class="row wide"><label for="pickType">Pick</label><select id="pickType"></select></div>
+      <div class="row wide"><label for="grip">Grip</label><select id="grip"><option value="tight">Tight (little tip showing)</option><option value="normal">Normal</option><option value="loose">Loose (lots of tip)</option></select></div>
+      <div class="row"><label for="pickAngle">Pick angle</label><input id="pickAngle" type="range" min="0" max="45" step="1" value="20"><output id="pickAngleOut">20°</output></div>
       <div class="row"><label for="speed">Stroke time</label><input id="speed" type="range" min="15" max="110" step="1" value="55"><output id="speedOut">55 ms</output></div>
       <div class="row"><label for="humanize">Humanize</label><input id="humanize" type="range" min="0" max="100" value="60"><output id="humanizeOut">60</output></div>
       <div class="row"><label for="updepth">Upstroke reach</label><input id="updepth" type="range" min="0" max="100" value="55"><output id="updepthOut">55</output></div>
