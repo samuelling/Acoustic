@@ -2,7 +2,7 @@
 // usage: node test/render.js <scenario> <out.wav> [json-params]
 const fs = require('fs');
 const path = require('path');
-require(path.join(__dirname, '../src/dsp.js'));
+require(path.join(__dirname, process.env.ENGINE === 'legacy' ? 'legacy_waveguide.js' : '../src/modal.js'));
 
 const SR = 48000;
 
