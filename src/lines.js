@@ -23,8 +23,11 @@ const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const HMINOR = [0, 2, 3, 5, 7, 8, 11], AEOLIAN = [0, 2, 3, 5, 7, 8, 10];
 
 // ---------------- harmony ----------------
-function analyseChord(frets, open) {
-  const pcs = []; frets.forEach((f, s) => { if (f >= 0) pcs.push((open[s] + f) % 12); });
+const IONIAN = [0, 2, 4, 5, 7, 9, 11];
+const NOTE = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const pcsOf = (frets, open) => { const o = []; frets.forEach((f, s) => { if (f >= 0) o.push((open[s] + f) % 12); }); return o; };
+
+function chordId(pcs) {
   const set = new Set(pcs), bass = pcs.length ? pcs[0] : 9, has = (r, i) => set.has((r + i) % 12);
   const cands = [];
   for (const r of set) {
@@ -37,15 +40,73 @@ function analyseChord(frets, open) {
     if (has(r, 3) && !has(r, 6) && !has(r, 7)) cands.push({ r, q: 'min', s: 1 + b / 2 });
   }
   cands.sort((a, b) => b.s - a.s);
-  const c = cands[0] || { r: bass, q: 'min' };
-  // the minor key this chord belongs to
-  const key = c.q === 'min' ? c.r : c.q === 'dim' ? (c.r + 1) % 12 : (c.r + 5) % 12;
-  const tones = c.q === 'min' ? [0, 3, 7] : c.q === 'dim' ? [0, 3, 6, 9] : c.q === 'sus' ? [0, 5, 7] : [0, 4, 7];
-  return { root: c.r, quality: c.q, key,
-    hm: new Set(HMINOR.map(i => (key + i) % 12)), aeol: new Set(AEOLIAN.map(i => (key + i) % 12)),
-    tones: tones.map(i => (c.r + i) % 12),
-    dimRoot: c.q === 'dim' ? c.r : (key + 11) % 12 };   // the leading-tone diminished seventh of the key
+  return cands[0] || { r: bass, q: 'min' };
 }
+const toneSet = (c) => (c.q === 'min' ? [0, 3, 7] : c.q === 'dim' ? [0, 3, 6, 9] : c.q === 'sus' ? [0, 5, 7] : c.q === 'dom' ? [0, 4, 7, 10] : [0, 4, 7]).map(i => (c.r + i) % 12);
+const setOf = (key, iv) => new Set(iv.map(i => (key + i) % 12));
+
+// The chord on its own, Yngwie's way: everything belongs to a minor key. A minor chord is i (harmonic minor); a
+// major chord is V of the minor key a 4th above (Phrygian dominant); a diminished chord is vii°7 of the minor key a
+// semitone above.
+function chordAlone(c, pcs) {
+  const key = c.q === 'min' ? c.r : c.q === 'dim' ? (c.r + 1) % 12 : (c.r + 5) % 12;
+  return { root: c.r, quality: c.q, key, mode: 'minor', pcs,
+    hm: setOf(key, HMINOR), aeol: setOf(key, AEOLIAN), tones: toneSet(c),
+    dimRoot: c.q === 'dim' ? c.r : (key + 11) % 12, dimOK: true };
+}
+
+// The chord inside a key (`ctx` = { tonic, mode }). In a minor key every diatonic chord is played over the key's
+// harmonic minor (natural minor where the chord has the flat 7th, e.g. VII); in a major key over the major scale,
+// with the leading-tone diminished seventh (his V7b9 colour) only over the V chord. A chord that doesn't fit the key
+// (a secondary dominant such as E in C major, a borrowed iv) falls back to the chord-alone reading.
+function analyseChord(frets, open, ctx) {
+  const pcs = pcsOf(frets, open), c = chordId(pcs);
+  if (!ctx) return chordAlone(c, pcs);
+  const t = ctx.tonic;
+  if (ctx.mode === 'minor') {
+    const hm = setOf(t, HMINOR), ae = setOf(t, AEOLIAN);
+    const inHm = pcs.every(p => hm.has(p)), inAe = pcs.every(p => ae.has(p));
+    if (!inHm && !inAe) return chordAlone(c, pcs);
+    const sc = inHm ? hm : ae;
+    return { root: c.r, quality: c.q, key: t, mode: 'minor', pcs, hm: sc, aeol: inHm ? ae : ae, tones: toneSet(c),
+      dimRoot: c.q === 'dim' ? c.r : (t + 11) % 12, dimOK: inHm };
+  }
+  const maj = setOf(t, IONIAN);
+  if (!pcs.every(p => maj.has(p))) return chordAlone(c, pcs);
+  const isV = c.r === (t + 7) % 12 && (c.q === 'maj' || c.q === 'dom');
+  return { root: c.r, quality: c.q, key: t, mode: 'major', pcs, hm: maj, aeol: maj, tones: toneSet(c),
+    dimRoot: c.q === 'dim' ? c.r : (t + 11) % 12, dimOK: isV || c.q === 'dim' };
+}
+
+// Key from the last few chords. Each of the 24 keys scores, per chord (recent chords count most): how many of the
+// chord's notes the key holds, plus a bonus when the chord is the key's tonic triad or its major V. Minor keys get a
+// small head start (he hears in minor), the current key a little hysteresis, so a lone C chord still reads as the V
+// of F minor, but C - F - G is C major.
+class KeyTracker {
+  constructor() { this.hist = []; this.key = null; }
+  add(pcs) {
+    if (!pcs.length) return;
+    const last = this.hist[this.hist.length - 1];
+    if (last && last.length === pcs.length && last.every((p, i) => p === pcs[i])) return;   // same chord again
+    this.hist.push(pcs.slice()); if (this.hist.length > 8) this.hist.shift();
+    let best = null;
+    for (let t = 0; t < 12; t++) for (const mode of ['major', 'minor']) {
+      const col = mode === 'major' ? setOf(t, IONIAN) : new Set([...setOf(t, HMINOR), ...setOf(t, AEOLIAN)]);
+      let sc = mode === 'minor' ? (this.hist.length === 1 ? 0.25 : 0.1) : 0, w = 1;
+      for (let i = this.hist.length - 1; i >= 0; i--, w *= 0.75) {
+        const p = this.hist[i], c = chordId(p);
+        sc += w * p.filter(x => col.has(x)).length / p.length;
+        if (c.r === t && (mode === 'major' ? c.q === 'maj' : c.q === 'min')) sc += 0.5 * w;
+        if (c.r === (t + 7) % 12 && (c.q === 'maj' || c.q === 'dom')) sc += 0.3 * w;
+      }
+      if (this.key && this.key.tonic === t && this.key.mode === mode) sc += 0.13 * Math.min(3, this.hist.length - 1);   // trust grows with evidence
+      if (!best || sc > best.sc) best = { tonic: t, mode, sc };
+    }
+    this.key = { tonic: best.tonic, mode: best.mode };
+  }
+  reset() { this.hist = []; this.key = null; }
+}
+const keyName = (k) => k ? NOTE[k.tonic] + (k.mode === 'major' ? ' major' : ' minor') : '';
 
 // ascending list of scale pitches between lo and hi
 const scalePitches = (pcs, lo, hi) => { const o = []; for (let m = lo; m <= hi; m++) if (pcs.has(m % 12)) o.push(m); return o; };
@@ -198,19 +259,28 @@ function enforcePicking(notes) {
 
 // ---------------- the generator ----------------
 class YngwieGen {
-  constructor(host) { this.h = host; this.lastFig = null; this.phrases = 0; }
+  constructor(host) { this.h = host; this.lastFig = null; this.phrases = 0; this.keys = new KeyTracker(); }
+  // a new chord is held: update the key estimate
+  chord(frets) { this.keys.add(pcsOf(frets, this.h.open())); }
+  // the key in force: a fixed key from the options ('A minor', 'C major'...), else the estimate ('auto')
+  key() {
+    const k = this.h.options().key;
+    if (k && k !== 'auto') { const [n, m] = k.split(' '); const t = NOTE.indexOf(n); if (t >= 0) return { tonic: t, mode: m === 'major' ? 'major' : 'minor' }; }
+    return this.keys.key;
+  }
+  keyName() { return keyName(this.key()); }
   // A phrase over this voicing: [optional slow statement] -> burst of figures -> long note (vibrato or bend) ->
   // breath. Returns notes with beat offsets (`beat`), timing already shaped (rushing runs, landing deviations), and
   // the phrase's total length in beats.
   phrase(frets, vel) {
     const open = this.h.open(), rng = this.h.rng, o = this.h.options(), bpm = o.bpm || 120;
-    const H = analyseChord(frets, open);
+    const H = analyseChord(frets, open, this.key());
     const intensity = clamp((vel - 0.25) / 0.65, 0, 1);
     const maxF = 17;
     const c = { open, H, rng, maxF, top: clamp(9 + Math.floor(rng() * 7), 7, 15),
       // sextuplets unless that passes ~15 notes/s; played softly he sings in sixteenths instead
       per: Math.floor(15 * 60 / bpm) >= 6 && intensity >= 0.35 ? 6 : 4,
-      minorDesc: () => H.quality === 'min' && rng() < 0.35 ? H.aeol : H.hm };
+      minorDesc: () => H.mode === 'minor' && H.quality === 'min' && rng() < 0.35 ? H.aeol : H.hm };
     // a chord-tone shape across the given strings, ascending, near c.top
     c.arpShape = (strs) => {
       const out = []; let prev = -1;
@@ -244,6 +314,7 @@ class YngwieGen {
     const W = H.quality === 'dim' ? { dimCells: 4, sweep3: 2, run3: 2, trill: 1 }
       : H.quality === 'min' ? { sixes1: 3, sixes2: 2.5, fours1: 1.5, pedal: 2.5, sweep3: 3, run3: 2, trill: 1.2 }
       : { sixes1: 2, sixes2: 2, pedal: 1.5, sweep3: 3, run3: 2, dimCells: 2, trill: 1.2, fours1: 1 };
+    if (!H.dimOK) delete W.dimCells;   // no leading-tone diminished colour where it would clash with the key
     for (let i = 0; i < nFig; i++) {
       const keys = Object.keys(W).filter(k => k !== this.lastFig), tot = keys.reduce((a, k) => a + W[k], 0);
       let r = rng() * tot, name = keys[0];
@@ -289,4 +360,6 @@ class YngwieGen {
 
 root.YngwieGen = YngwieGen;
 root.analyseChord = analyseChord;
+root.lineKeyName = keyName;
+root.LINE_KEYS = ['auto'].concat(...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(t => [NOTE[t] + ' minor', NOTE[t] + ' major']));
 })(typeof globalThis !== 'undefined' ? globalThis : this);

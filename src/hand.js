@@ -126,6 +126,8 @@ class RightHand {
     const prev = this.v;
     this.v = v; this.vel = vel; this.roles = this.mapRoles(v);
     if (this.style().gen) {   // a generated line: replan from (about) now over the new harmony
+      if (!this.gen) this.gen = new root.YngwieGen(this.h);
+      this.gen.chord(v.frets);   // the key follows the progression
       this.lineQ = []; this.tLine = Math.max(t, this.h.now() + 0.01);
       if (!this.running) { this.running = true; this.tick(); }
       return;

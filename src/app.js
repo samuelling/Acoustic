@@ -340,8 +340,19 @@ const KEYSWITCH = { 24: 'auto', 25: 'slide', 26: 'hammer', 27: 'off' };   // C1,
 function bindHandStyle() {
   fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
   strum.set({ style: $('handStyle').value });
+  // Key for generated lines (Yngwie mode): Auto follows the progression and shows what it hears
+  fillSelect('lineKey', LINE_KEYS.map(k => [k, k === 'auto' ? 'Auto' : k]), store.get('o.key', 'auto'));
+  strum.set({ key: $('lineKey').value });
+  $('lineKey').addEventListener('change', () => { strum.set({ key: $('lineKey').value }); store.set('o.key', $('lineKey').value); });
+  const showKeyRow = () => { $('lineKeyRow').hidden = !HAND_STYLES[$('handStyle').value].gen; };
+  showKeyRow();
+  setInterval(() => {
+    const g = strum.hand && strum.hand.gen, opt = $('lineKey').options[0];
+    const txt = g && g.keys.key ? 'Auto (hearing ' + lineKeyName(g.keys.key) + ')' : 'Auto';
+    if (!$('lineKeyRow').hidden && opt.textContent !== txt) opt.textContent = txt;
+  }, 400);
   $('handStyle').addEventListener('change', () => {
-    const k = $('handStyle').value; strum.set({ style: k }); store.set('o.style', k);
+    const k = $('handStyle').value; strum.set({ style: k }); store.set('o.style', k); showKeyRow();
     // each style starts at its typical tempo unless a MIDI clock is setting it
     const clocked = clockTicks.length === 25 && performance.now() - clockTicks[24] < 1000;
     // a style with a signature pick selects it (Yngwie: Delrin 1.5 mm, bevelled); it can be changed afterwards
