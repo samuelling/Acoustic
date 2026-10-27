@@ -3,7 +3,7 @@
 const path = require('path');
 require(path.join(__dirname, '../src/space.js'));
 require(path.join(__dirname, '../src/modal.js'));
-require(path.join(__dirname, '../src/hand.js'));
+require(path.join(__dirname, '../src/lines.js')); require(path.join(__dirname, '../src/hand.js'));
 require(path.join(__dirname, '../src/strum.js'));
 const { writeWav } = require('./render.js');
 const SR = 48000;

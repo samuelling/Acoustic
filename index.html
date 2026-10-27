@@ -296,6 +296,7 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <p><b>Measured directivity.</b> Close up, that geometry decides the sound. From a metre or more away, what you hear is set by how the whole instrument, and the person holding it, beams sound. That pattern comes from a real guitar played by a musician in an anechoic chamber, recorded from 32 directions at 2 m (Ackermann et al., TU Berlin). The synth was measured the same way and compared. The fix-ups it needed: the player's body takes about 6 dB off everything behind them from 250 Hz up, and the back of a real guitar is brighter than a simple shadow model. Distant mics, and every reflection that leaves the guitar into the room, now follow the measured pattern; close mics keep the geometry. Try “Behind the player”.</p>
       <p><b>The pick.</b> A pick is a little cantilever. For every pluck the synth works out where the string slips off its tip, from the pick's stiffness, its friction against the string, your attack angle and grip. That gives how far the string was pushed (loudness), which way (a flexing pick pushes it more into the top), and how fast it let go (brightness). Tip hardness is Hertz contact: a rubber or felt tip dents where it presses the string, so it touches more of it and lets go gently.</p>
       <p><b>The plucking hand.</b> In Pattern mode the hand plays the style the way a guitarist's fingers would. The thumb keeps the bass and the fingers their home strings. Timing has a slow drift of the whole hand plus a little scatter per note, matched to hexaphonic measurements of guitarists. Plucked chords spread over 10–25 ms in each player's habitual order. The ring finger is weakest and slightly late. Rest strokes land on the next string and damp it, and a careless follow-through sometimes grazes a neighbour. Rasgueado fans four nail sweeps over about 0.3 s. Lower the skill to hear a beginner.</p>
+      <p><b>Yngwie mode.</b> A pattern style that improvises neoclassical lines over the chord you hold, after Yngwie Malmsteen. A minor chord is played as harmonic minor. A major chord is heard as the dominant of the minor key a fourth up (Phrygian dominant), and a diminished chord as the leading-tone seventh. The picking follows his downward pickslant: strings change after upstrokes, a downstroke can only sweep on to the next higher string, and a pull-off covers the moves that can't be picked. The lines are built from his figures (six-note sequences, pedal points, three-string sweeps, diminished cells climbing in minor thirds, runs). Phrases rush into a long note with wide vibrato or a bend, then breathe. Play the chord softly for singing lines, hard for shred. It picks his 1.5 mm Delrin.</p>
       <p><b>The fretting hand.</b> The squeak of fingers on wound strings comes from the hand's movement, not from a sample. A fingertip sliding along a wound string catches on each wrap of the winding, so the squeak's pitch is the sliding speed divided by the winding pitch. That friction pushes along the string, through the bridge, into the body. The hand moves the way arms do (fast in the middle, slow at the ends), so a squeak rises and falls in pitch. Fingers drag as they leave a chord and the guide finger slides into the next one. Hold a note and press another a few frets away: the finger glides there, the pitch stepping fret by fret. Closer notes become hammer-ons (the finger strikes the string onto the fret) and pull-offs (it plucks the string as it leaves).</p>
       <p><b>The room.</b> Reflections are traced by the image-source method: each wall bounce is attenuated per octave by its material, per ray by the direction it left the guitar (the measured pattern of a guitar in a player's arms) and by the direction it reaches the mic. A late tail follows, decaying per octave at the Eyring rate for the room's volume and surfaces, at the energy level room acoustics predicts, so moving the mics away naturally trades direct sound for room sound.</p>
       <p><b>Calibration.</b> Decay per harmonic, inharmonicity, brightness over time, beating depth, and strum timing and brightness were measured from recordings of real steel-string guitars, single notes and labeled down and up strums, and the model was checked against them.</p>
@@ -962,6 +963,7 @@ const PICKS = {
   nylon46:  { name: 'Nylon .46 (thin)',            E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 0.46e-3, w: 7e-3, edge: 0.15e-3, scrape: 1.0 },
   cell71:   { name: 'Celluloid .71 (medium)',      E: 2.0e9, rho: 1350, eta: 0.030, mu: 0.35, t: 0.71e-3, w: 8e-3, edge: 0.15e-3, scrape: 1.0 },
   delrin100:{ name: 'Delrin 1.0 (Tortex-style)',   E: 2.9e9, rho: 1410, eta: 0.012, mu: 0.20, t: 1.00e-3, w: 8e-3, edge: 0.15e-3, scrape: 0.7 },
+  delrin150:{ name: 'Delrin 1.5, bevelled',        E: 2.9e9, rho: 1410, eta: 0.012, mu: 0.20, t: 1.50e-3, w: 8e-3, edge: 0.30e-3, scrape: 0.6 },
   ultem150: { name: 'Ultem 1.5 (heavy)',           E: 3.3e9, rho: 1270, eta: 0.006, mu: 0.28, t: 1.50e-3, w: 8e-3, edge: 0.18e-3, scrape: 0.8 },
   jazz3:    { name: 'Nylon 1.38, small sharp tip', E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 1.38e-3, w: 5e-3, edge: 0.18e-3, scrape: 1.0, ell: 0.75 },
   bone300:  { name: 'Bone 3 mm, bevelled',         E: 15e9,  rho: 1900, eta: 0.010, mu: 0.25, t: 3.00e-3, w: 9e-3, edge: 0.50e-3, scrape: 0.6 },
@@ -1482,7 +1484,8 @@ class GuitarEngine {
   updateCoefs(v, force) {
     if (!force && Math.abs(v.detune - v.appliedDetune) < 2e-6 && Math.abs(v.extra - v.appliedExtra) < 0.05) return;
     const sr = this.sr, bendR = this.bend === 0 ? 1 : Math.pow(2, this.bend / 12);
-    const dt = (1 + v.detune) * bendR * (v.shift ? Math.pow(2, v.shift / 12) : 1);   // shift: frets slid through
+    const sh = (v.shift || 0) + (v.vibShift || 0) + (v.bendShift || 0);
+    const dt = (1 + v.detune) * bendR * (sh ? Math.pow(2, sh / 12) : 1);   // shift: frets slid through; vibShift: finger vibrato
     const ex = v.extra;
     for (let c = 0; c < v.n; c++) {
       const f = v.w[c] / TAU;
@@ -1532,6 +1535,9 @@ class GuitarEngine {
       case 'touch': this.touchString(ev); break;
       case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
       case 'tap': this.tap(ev); break;
+      // a string bend by the fretting finger: rises by `amount` semitones over `rise` s (smooth), held, optionally released
+      case 'sbend': { const st = this.strings[ev.s]; if (st) st.sbend = { at: this.clock + Math.round((ev.delay || 0) * this.sr), amount: ev.amount ?? 2, rise: ev.rise || 0.12, release: ev.release }; break; }
+      case 'vibrato': { const st = this.strings[ev.s]; if (st) st.vib = { at: this.clock + Math.round((ev.delay || 0) * this.sr), rate: ev.rate || 5.5, depth: ev.depth ?? 0.6, dur: ev.dur || 0.6, attack: ev.attack || 0.12, jit: (this.rng() - 0.5) * 0.6 }; break; }
       case 'palm':   // the palm lands on (or lifts from) the strings near the bridge, ringing ones included
         for (const st of this.strings) for (const v of st.voices) {
           if (ev.on) { if (v.extraTarget < 9) { v.extraTarget = 9; v.extraRate = 0.5; v.palmed = true; } }
@@ -1571,7 +1577,11 @@ class GuitarEngine {
       for (let c = 0; c < v.n; c++) { v.y1[c] *= kc; v.y2[c] *= kc; }
     }
     s.midi = midi; s.fret = Math.round(midi - s.open);
-    s.releaseAt = -1;
+    s.releaseAt = -1; v.bendShift = 0; v.vibShift = 0;
+    // a bend or vibrato already under way belonged to the previous note; one still pending was sent for this note
+    // (it is handled before the pluck, which waits out the pick's contact time)
+    if (s.sbend && s.sbend.at <= this.clock) s.sbend = null;
+    if (s.vib && s.vib.at <= this.clock) s.vib = null;
     v.live = true;
     // damping state
     if (ev.dead) { v.extraTarget = 140; v.extra = 140; v.extraRate = 1; }
@@ -2005,6 +2015,30 @@ class GuitarEngine {
   control() {
     this.bend += (this.bendTarget - this.bend) * 0.25;
     for (const s of this.strings) {
+      // finger vibrato on this string: the fretting finger bends the string and lets it back (pitch moves up from
+      // the note, not around it), with the width easing in; a wide, violin-like vibrato needs a scalloped board
+      const bd = s.sbend;
+      if (bd) {
+        const t = (this.clock - bd.at) / this.sr, v = s.v;
+        if (t >= 0) {
+          const u = Math.min(1, t / bd.rise), sm = u * u * (3 - 2 * u);
+          const rel = bd.release != null && t > bd.release ? Math.min(1, (t - bd.release) / bd.rise) : 0;
+          v.bendShift = bd.amount * sm * (1 - rel);
+          if (rel >= 1) { v.bendShift = 0; s.sbend = null; }
+          this.updateCoefs(v, true);
+        }
+      }
+      const vb = s.vib;
+      if (vb) {
+        const t = (this.clock - vb.at) / this.sr, v = s.v;
+        if (t >= vb.dur || v.midi === undefined) { v.vibShift = 0; s.vib = null; this.updateCoefs(v, true); }
+        else if (t >= 0) {
+          const ramp = Math.min(1, t / vb.attack), fade = Math.min(1, (vb.dur - t) / 0.08);
+          const ph = TAU * vb.rate * t + vb.jit * Math.sin(TAU * 0.7 * t);
+          v.vibShift = vb.depth * ramp * fade * (0.5 - 0.5 * Math.cos(ph));
+          this.updateCoefs(v, true);
+        }
+      }
       let envSum = 0;
       for (const v of s.voices) {
         if (!v.nact) continue;
@@ -2320,7 +2354,300 @@ if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 
 }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
-<script>// Acoustic — the plucking hand. Turns a held chord into what a guitarist's right hand does with it, style by style:
+<script>// Acoustic — generated lead lines over a held chord: "Yngwie mode", neoclassical lines after Yngwie Malmsteen.
+// The rules below come from published analyses of his playing (README, "Yngwie mode", has the sources and marks
+// what is documented versus estimated):
+//  - harmony: a held minor chord is i (harmonic minor, some natural minor in descending sequences); a major chord is
+//    V of the minor key a 4th above (Phrygian dominant, never the natural 7th); a diminished chord is vii°7 of the
+//    minor key a semitone above (symmetric: the cell moves by minor thirds);
+//  - picking (Troy Grady; Guitar Interactive): downward pickslanting. Strings change after upstrokes; after a
+//    downstroke only to the next higher string, on another downstroke (a sweep); a descending change after a
+//    downstroke is made possible by a pull-off. Every new figure and every new string in a run starts on a downstroke;
+//    the first note of each group is accented; legato notes take no stroke;
+//  - figures: single-string 3-1-2-3-2-1 sixes, single-string fours, two-string descending sixes, Bach-style pedal
+//    point, the 3-string sweep loop (D D D U pull-off U), ascending 5-string arpeggios landing on a long note,
+//    diminished cells moving up in minor thirds (U U D), three-note-per-string runs, trills with a turn;
+//  - time: runs accelerate into their target (slower first quarter, faster last quarter), land within a few tens of
+//    ms of it (sometimes late after a small stall), phrases go burst -> long note with wide vibrato or a bend -> breath;
+//  - expression: wide, one-sided ("bend") vibrato ~5 Hz, delayed and easing in; whole-step bends.
+// How hard the chord is played sets the intensity (soft: lyrical, few bursts; hard: dense shred).
+
+(function (root) {
+'use strict';
+
+const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const HMINOR = [0, 2, 3, 5, 7, 8, 11], AEOLIAN = [0, 2, 3, 5, 7, 8, 10];
+
+// ---------------- harmony ----------------
+function analyseChord(frets, open) {
+  const pcs = []; frets.forEach((f, s) => { if (f >= 0) pcs.push((open[s] + f) % 12); });
+  const set = new Set(pcs), bass = pcs.length ? pcs[0] : 9, has = (r, i) => set.has((r + i) % 12);
+  const cands = [];
+  for (const r of set) {
+    const b = r === bass ? 1 : 0;
+    if (has(r, 3) && has(r, 6) && !has(r, 7)) cands.push({ r, q: 'dim', s: 3 + b });
+    if (has(r, 4) && has(r, 7)) cands.push({ r, q: has(r, 10) ? 'dom' : 'maj', s: 3 + b });
+    if (has(r, 3) && has(r, 7)) cands.push({ r, q: 'min', s: 3 + b });
+    if (has(r, 5) && has(r, 7) && !has(r, 3) && !has(r, 4)) cands.push({ r, q: 'sus', s: 2.5 + b });
+    if (has(r, 4) && !has(r, 7)) cands.push({ r, q: 'maj', s: 1 + b / 2 });
+    if (has(r, 3) && !has(r, 6) && !has(r, 7)) cands.push({ r, q: 'min', s: 1 + b / 2 });
+  }
+  cands.sort((a, b) => b.s - a.s);
+  const c = cands[0] || { r: bass, q: 'min' };
+  // the minor key this chord belongs to
+  const key = c.q === 'min' ? c.r : c.q === 'dim' ? (c.r + 1) % 12 : (c.r + 5) % 12;
+  const tones = c.q === 'min' ? [0, 3, 7] : c.q === 'dim' ? [0, 3, 6, 9] : c.q === 'sus' ? [0, 5, 7] : [0, 4, 7];
+  return { root: c.r, quality: c.q, key,
+    hm: new Set(HMINOR.map(i => (key + i) % 12)), aeol: new Set(AEOLIAN.map(i => (key + i) % 12)),
+    tones: tones.map(i => (c.r + i) % 12),
+    dimRoot: c.q === 'dim' ? c.r : (key + 11) % 12 };   // the leading-tone diminished seventh of the key
+}
+
+// ascending list of scale pitches between lo and hi
+const scalePitches = (pcs, lo, hi) => { const o = []; for (let m = lo; m <= hi; m++) if (pcs.has(m % 12)) o.push(m); return o; };
+const fretOn = (open, s, m, maxF) => { const f = m - open[s]; return f >= 0 && f <= maxF ? f : -1; };
+
+// ---------------- figures ----------------
+// Each returns an array of notes {s, f, m, dur (beats), art ('pick' | 'h' | 'p'), dir (1 down, -1 up), acc}
+// or null if it can't be placed. `per` = notes per beat for the fast figures.
+const FIG = {
+  // single-string six-note pattern: degrees [d, d-2, d-1, d, d-1, d-2], next group one step down; D U D U D U
+  sixes1(c, beats) {
+    const s = c.rng() < 0.7 ? 5 : 4, pcs = c.minorDesc(), sc = scalePitches(pcs, c.open[s] + 3, c.open[s] + c.maxF);
+    let d = sc.findIndex(m => m - c.open[s] >= c.top - 1); if (d < 0) d = sc.length - 1;
+    const out = [], groups = Math.max(1, Math.round(beats * c.per / 6));
+    for (let g = 0; g < groups && d - 2 >= 0; g++, d--) {
+      [d, d - 2, d - 1, d, d - 1, d - 2].forEach((i, k) => out.push({ s, m: sc[i], f: sc[i] - c.open[s], dur: 1 / c.per, art: 'pick', dir: k % 2 ? -1 : 1, acc: k === 0 }));
+    }
+    return out;
+  },
+  // single-string fours: [d, d-1, d-2, d-3], next group one step down; D U D U
+  fours1(c, beats) {
+    const s = c.rng() < 0.6 ? 5 : 4, pcs = c.minorDesc(), sc = scalePitches(pcs, c.open[s] + 3, c.open[s] + c.maxF);
+    let d = sc.findIndex(m => m - c.open[s] >= c.top); if (d < 0) d = sc.length - 1;
+    const out = [], groups = Math.max(1, Math.round(beats * 4 / 4));
+    for (let g = 0; g < groups && d - 3 >= 0; g++, d--) [d, d - 1, d - 2, d - 3].forEach((i, k) => out.push({ s, m: sc[i], f: sc[i] - c.open[s], dur: 1 / 4, art: 'pick', dir: k % 2 ? -1 : 1, acc: k === 0 }));
+    return out;
+  },
+  // two-string descending sixes: six consecutive scale notes down, three on the high E then three on B, each group
+  // one step lower; each string D U pull-off
+  sixes2(c, beats) {
+    const pcs = c.minorDesc(), sc = scalePitches(pcs, c.open[4], c.open[5] + c.maxF);
+    let d = sc.findIndex(m => m - c.open[5] >= c.top + 1); if (d < 0) d = sc.length - 1;
+    const out = [], groups = Math.max(1, Math.round(beats * c.per / 6));
+    for (let g = 0; g < groups; g++, d--) {
+      if (d - 5 < 0) break;
+      const grp = [0, 1, 2, 3, 4, 5].map(i => sc[d - i]);
+      const ok = grp.every((m, i) => fretOn(c.open, i < 3 ? 5 : 4, m, c.maxF) >= 0);
+      if (!ok) break;
+      grp.forEach((m, i) => { const s = i < 3 ? 5 : 4; out.push({ s, m, f: m - c.open[s], dur: 1 / c.per, art: i % 3 === 2 ? 'p' : 'pick', dir: i % 3 === 0 ? 1 : -1, acc: i === 0 }); });
+    }
+    return out.length ? out : null;
+  },
+  // Bach / violin pedal point on one string: a fixed pedal below, a scale line above moving down toward it;
+  // [L1, P, L2, P, ...] strict alternation
+  pedal(c, beats) {
+    const s = 5, pcs = c.H.hm;
+    let pf = -1;
+    for (let f = clamp(c.top - 3, 3, 12); f >= 2; f--) if (c.H.tones.includes((c.open[s] + f) % 12)) { pf = f; break; }
+    if (pf < 0) return null;
+    const P = c.open[s] + pf, line = scalePitches(pcs, P + 1, Math.min(c.open[s] + c.maxF, P + 6)).reverse();   // in position
+    const out = [];
+    for (let i = 0; i < beats * 2 && line.length; i++) {
+      const L = line[i % line.length];
+      out.push({ s, m: L, f: L - c.open[s], dur: 1 / 4, art: 'pick', dir: 1, acc: i % 2 === 0 }, { s, m: P, f: pf, dur: 1 / 4, art: 'pick', dir: -1 });
+    }
+    return out;
+  },
+  // 3-string sweep loop on G, B, E: [s3, s2, s1, s1top, s1, s2], D D D U pull-off U, one loop per beat (sextuplets)
+  sweep3(c, beats) {
+    const shape = c.arpShape([3, 4, 5]);
+    if (!shape) return null;
+    const [g, b, e] = shape, topM = c.nextTone(e.m, 5);
+    if (topM < 0) return null;
+    const top = { s: 5, m: topM, f: topM - c.open[5] }, out = [], d = 1 / 6;
+    for (let r = 0; r < Math.max(1, Math.round(beats)); r++) {
+      out.push(Object.assign({}, g, { dur: d, art: 'pick', dir: 1, acc: true }), Object.assign({}, b, { dur: d, art: 'pick', dir: 1 }),
+        Object.assign({}, e, { dur: d, art: 'pick', dir: 1 }), Object.assign({}, top, { dur: d, art: 'pick', dir: -1 }),
+        Object.assign({}, e, { dur: d, art: 'p' }), Object.assign({}, b, { dur: d, art: 'pick', dir: -1 }));
+    }
+    return out;
+  },
+  // ascending 5-string arpeggio: [s5, s5 hammer to the next tone, s4, s3, s2, s1, s1 top], all downstrokes (a sweep),
+  // landing on the top note (the phrase holds it)
+  arp5(c) {
+    const shape = c.arpShape([1, 2, 3, 4, 5]);
+    if (!shape) return null;
+    const a = shape[0], ah = c.nextTone(a.m, 1), topM = c.nextTone(shape[4].m, 5);
+    const out = [Object.assign({}, a, { dur: 1 / 8, art: 'pick', dir: 1, acc: true })];
+    if (ah > 0 && ah < shape[1].m && ah - a.m <= 4) out.push({ s: 1, m: ah, f: ah - c.open[1], dur: 1 / 8, art: 'h' });
+    shape.slice(1).forEach(n => out.push(Object.assign({}, n, { dur: 1 / 8, art: 'pick', dir: 1 })));
+    if (topM > 0) out.push({ s: 5, m: topM, f: topM - c.open[5], dur: 1 / 8, art: 'h' });
+    return out;
+  },
+  // diminished cells: a descending dim7 triad across E, B, G (U U D), then the same cell three frets higher
+  dimCells(c, beats) {
+    const r = c.H.dimRoot, out = [];
+    let base = clamp(c.top - 6, 3, c.maxF - 9);
+    for (let k = 0; k < Math.max(2, Math.round(beats * 2)) && base + 3 * k <= c.maxF - 1; k++) {
+      // cell: on the top string the dim7 tone at/above base+3k, then the next lower tones on B and G
+      let m = c.open[5] + base + 3 * k; while ((m - r + 120) % 3 !== 0) m++;
+      const notes = [m, m - 3, m - 6], strs = [5, 4, 3];
+      const fs = notes.map((x, i) => fretOn(c.open, strs[i], x, c.maxF));
+      if (fs.some(f => f < 0)) break;
+      notes.forEach((x, i) => out.push({ s: strs[i], m: x, f: fs[i], dur: 1 / 6, art: 'pick', dir: i < 2 ? -1 : 1, acc: i === 0 }));
+    }
+    return out.length >= 6 ? out : null;
+  },
+  // three notes per string, ascending (D U D, sweep D...) or descending (D U pull-off per string)
+  run3(c, beats, upOverride) {
+    const up = upOverride ?? c.rng() < 0.55, pcs = up ? c.H.hm : c.minorDesc();
+    const pos = clamp(c.top - 4 - Math.floor(c.rng() * 3), 1, c.maxF - 6);
+    const strs = up ? [2, 3, 4, 5] : [5, 4, 3, 2];
+    const box = [];
+    for (const s of strs) {
+      const prevM = box.length ? box[box.length - 1].m : null;
+      // three scale notes in this position, continuing the line (no repeated pitch across the string change)
+      let cand = scalePitches(pcs, c.open[s] + pos - 1, c.open[s] + pos + 6);
+      if (prevM != null) cand = up ? cand.filter(m => m > prevM) : cand.filter(m => m < prevM);
+      cand = up ? cand.slice(0, 3) : cand.slice(-3);
+      if (cand.length < 3) break;
+      const asc = up ? cand : cand.slice().reverse();
+      asc.forEach((m, i) => box.push({ s, m, f: m - c.open[s], art: !up && i === 2 ? 'p' : 'pick', dir: i === 1 ? -1 : 1, acc: i === 0 && box.length === 0 }));
+    }
+    const n = Math.min(box.length, Math.max(6, Math.round(beats * c.per)));
+    return box.slice(0, n).map(x => Object.assign(x, { dur: 1 / c.per }));
+  },
+  // trill: main <-> upper neighbour (first picked, rest legato), then a turn [upper, main, lower, main]
+  trill(c, beats) {
+    const s = c.rng() < 0.6 ? 5 : 4, pcs = c.H.hm;
+    let tf = -1;
+    for (let f = clamp(c.top, 4, c.maxF - 2); f >= 3; f--) if (c.H.tones.includes((c.open[s] + f) % 12)) { tf = f; break; }
+    if (tf < 0) return null;
+    const M = c.open[s] + tf, up = scalePitches(pcs, M + 1, M + 2)[0], lo = scalePitches(pcs, M - 2, M - 1).pop();
+    if (!up || !lo) return null;
+    const out = [{ s, m: M, f: tf, dur: 1 / 8, art: 'pick', dir: 1, acc: true }];
+    const n = Math.max(4, Math.round(beats * 8) - 5);
+    for (let i = 0; i < n; i++) { const m = i % 2 ? M : up; out.push({ s, m, f: m - c.open[s], dur: 1 / 8, art: i % 2 ? 'p' : 'h' }); }
+    if (out[out.length - 1].m === M) out.push({ s, m: up, f: up - c.open[s], dur: 1 / 8, art: 'h' });
+    out.push({ s, m: M, f: tf, dur: 1 / 8, art: 'p' }, { s, m: lo, f: lo - c.open[s], dur: 1 / 8, art: 'p' }, { s, m: M, f: tf, dur: 1 / 8, art: 'h' });
+    return out;
+  }
+};
+
+// Pickstroke check where figures meet (inside a figure the strokes are already written in). Downward pickslanting:
+// an upstroke escapes the strings, a downstroke ends trapped beside the next higher string. So after a downstroke
+// the pick can only go on to that next string, with another downstroke (a sweep). Moving to a lower string after a
+// downstroke needs the last note on the old string to be a pull-off instead (his standard fix); where that isn't
+// possible, the pick hops over the string, which costs a few ms (`hop`).
+function enforcePicking(notes) {
+  for (let i = 1; i < notes.length; i++) {
+    const n = notes[i], p = notes[i - 1];
+    if (n.art !== 'pick' || p.art !== 'pick' || n.s === p.s || p.dir !== 1) continue;
+    if (n.s === p.s + 1) { n.dir = 1; continue; }
+    const pp = notes[i - 2];
+    if (n.s < p.s && pp && pp.s === p.s && pp.m > p.m) { p.art = 'p'; n.dir = 1; continue; }
+    n.hop = 0.008 + 0.006 * Math.abs(n.s - p.s);   // keeps its written stroke
+  }
+  return notes;
+}
+
+// ---------------- the generator ----------------
+class YngwieGen {
+  constructor(host) { this.h = host; this.lastFig = null; this.phrases = 0; }
+  // A phrase over this voicing: [optional slow statement] -> burst of figures -> long note (vibrato or bend) ->
+  // breath. Returns notes with beat offsets (`beat`), timing already shaped (rushing runs, landing deviations), and
+  // the phrase's total length in beats.
+  phrase(frets, vel) {
+    const open = this.h.open(), rng = this.h.rng, o = this.h.options(), bpm = o.bpm || 120;
+    const H = analyseChord(frets, open);
+    const intensity = clamp((vel - 0.25) / 0.65, 0, 1);
+    const maxF = 17;
+    const c = { open, H, rng, maxF, top: clamp(9 + Math.floor(rng() * 7), 7, 15),
+      // sextuplets unless that passes ~15 notes/s; played softly he sings in sixteenths instead
+      per: Math.floor(15 * 60 / bpm) >= 6 && intensity >= 0.35 ? 6 : 4,
+      minorDesc: () => H.quality === 'min' && rng() < 0.35 ? H.aeol : H.hm };
+    // a chord-tone shape across the given strings, ascending, near c.top
+    c.arpShape = (strs) => {
+      const out = []; let prev = -1;
+      for (const s of strs) {
+        let best = null;
+        for (let f = Math.max(1, c.top - 5); f <= Math.min(maxF, c.top + 3); f++) {
+          const m = open[s] + f; if (!H.tones.includes(m % 12) || m <= prev) continue;
+          if (!best || Math.abs(f - c.top + 1) < Math.abs(best.f - c.top + 1)) best = { s, f, m };
+        }
+        if (!best) return null; out.push(best); prev = best.m;
+      }
+      return out;
+    };
+    c.nextTone = (m, s) => { for (let x = m + 1; x <= m + 6; x++) if (H.tones.includes(x % 12) && x - open[s] <= maxF) return x; return -1; };
+    this.phrases++;
+    const notes = []; let b = 0;
+    const push = (arr, warp) => {
+      if (!arr || !arr.length) return 0;
+      const span = arr.reduce((a, n) => a + n.dur, 0), k = warp ? 0.08 + 0.07 * rng() : 0;
+      let t = 0;
+      for (const n of arr) { const x = t / span; notes.push(Object.assign({}, n, { beat: b + span * (x + k * x * (1 - x)) })); t += n.dur; }
+      b += span; return span;
+    };
+    // 1) an optional slow statement: two or three chord tones, the last held with vibrato
+    if (rng() < 0.45 * (1 - intensity) + 0.1) {
+      const sh = c.arpShape([3, 4, 5]);
+      if (sh) { const k = 2 + (rng() < 0.5 ? 1 : 0); for (let i = 0; i < k; i++) push([Object.assign({}, sh[i], { dur: i === k - 1 ? 1.5 : 0.5, art: 'pick', dir: 1, vib: i === k - 1, acc: i === 0 })]); }
+    }
+    // 2) a burst of chained figures; the acoustic keeps them a little sparser than on electric
+    const nFig = 1 + Math.round(intensity * 2 * (0.6 + 0.4 * rng()));
+    const W = H.quality === 'dim' ? { dimCells: 4, sweep3: 2, run3: 2, trill: 1 }
+      : H.quality === 'min' ? { sixes1: 3, sixes2: 2.5, fours1: 1.5, pedal: 2.5, sweep3: 3, run3: 2, trill: 1.2 }
+      : { sixes1: 2, sixes2: 2, pedal: 1.5, sweep3: 3, run3: 2, dimCells: 2, trill: 1.2, fours1: 1 };
+    for (let i = 0; i < nFig; i++) {
+      const keys = Object.keys(W).filter(k => k !== this.lastFig), tot = keys.reduce((a, k) => a + W[k], 0);
+      let r = rng() * tot, name = keys[0];
+      for (const k of keys) { r -= W[k]; if (r <= 0) { name = k; break; } }
+      const beats = name === 'sweep3' ? 1 + Math.floor(rng() * 2) : name === 'pedal' ? 2 : rng() < 0.5 ? 1 : 2;
+      const f = FIG[name](c, beats);
+      if (f && f.length) { push(f, true); this.lastFig = name; }
+    }
+    // 3) the landing: a run or a 5-string arpeggio into a long chord tone with wide vibrato, or a whole-step bend
+    const into = rng() < 0.4 ? FIG.arp5(c) : FIG.run3(c, 1, rng() < 0.6);
+    if (into && into.length) push(into, true);
+    const last = notes[notes.length - 1];
+    if (last) {
+      const hold = 1 + Math.floor(rng() * (2 + 2 * (1 - intensity)));   // 1-2 beats when shredding, up to 4 when singing
+      const next = Math.ceil(b - 0.05);                        // the beat the long note fills to
+      if (H.tones.includes(last.m % 12) && rng() < 0.6) {
+        // the run's last note is already the target: hold it
+        last.dur = next + hold - last.beat; last.vib = true; last.acc = true;
+        b = next + hold;
+      } else {
+        // resolve to the nearest chord tone on the same string, on the next beat; often a whole-step bend into it
+        let land = null;
+        for (let df = 1; df <= 4 && !land; df++) for (const sg of [-1, 1]) {
+          const m = last.m + sg * df, f = m - open[last.s];
+          if (f > 0 && f <= maxF && H.tones.includes(m % 12)) { land = { s: last.s, m, f }; break; }
+        }
+        if (land) {
+          const bend = rng() < 0.35 && land.f >= 5 && last.s >= 3 && H.hm.has((land.m - 2) % 12);
+          // landing deviation: usually within ~20 ms, sometimes a small stall and a late landing
+          const late = rng() < 0.2 ? 0.04 + 0.04 * rng() : (rng() - 0.5) * 0.04;
+          b = Math.max(next, b);
+          notes.push({ s: land.s, m: bend ? land.m - 2 : land.m, f: bend ? land.f - 2 : land.f, dur: hold, beat: b, lateS: late,
+            art: 'pick', dir: 1, acc: true, vib: true, bend });
+          b += hold;
+        }
+      }
+    }
+    // 4) a breath
+    b += 0.25 + Math.round(rng() * 3) * 0.25;
+    return { notes: enforcePicking(notes), beats: b, H };
+  }
+}
+
+root.YngwieGen = YngwieGen;
+root.analyseChord = analyseChord;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+// Acoustic — the plucking hand. Turns a held chord into what a guitarist's right hand does with it, style by style:
 // which finger takes which string, when each finger actually lands, how hard, rest or free stroke, and the small
 // contacts a real hand makes (a rest stroke landing on the next string, a follow-through grazing a neighbour, the
 // ring finger dragged along by the middle, the thumb resting on the bass, fingers planted before an arpeggio, the
@@ -2417,6 +2744,7 @@ const STYLES = {
     steps: ['R:i>', '-', 'X:all G', 'Ru:i.', '-', 'Ru:i', 'X:all G', 'Ru:i.'] },
   solea: { name: 'Flamenco soleá compás (12 beats)', tempo: 150, sub: 1, beats: 12, nail: true, brush: 0,
     steps: ['p:B', 'R:i', 'R:eami> G', 'p:B', 'R:i', 'R:eami> G', 'R:i', 'R:eami> G', 'p:B', 'R:eami> G', 'Ru:i', 'R:ami> G'] },
+  yngwie: { name: 'Yngwie mode (neoclassical lead lines)', tempo: 120, sub: 4, beats: 4, gen: 'yngwie', pick: true, pickType: 'delrin150', brush: 0, steps: ['-'] },
   alzapua: { name: 'Flamenco alzapúa (thumb down-up-down)', tempo: 120, sub: 3, beats: 2, nail: true, brush: 0,
     steps: ['p:B!>', 'Pd:top3', 'Pu:top3', 'p:B!>', 'Pd:top3', 'Pu:top3'] }
 };
@@ -2446,6 +2774,11 @@ class RightHand {
   chord(v, vel, t) {
     const prev = this.v;
     this.v = v; this.vel = vel; this.roles = this.mapRoles(v);
+    if (this.style().gen) {   // a generated line: replan from (about) now over the new harmony
+      this.lineQ = []; this.tLine = Math.max(t, this.h.now() + 0.01);
+      if (!this.running) { this.running = true; this.tick(); }
+      return;
+    }
     if (!this.running) {
       this.running = true; this.step = 0; this.tGrid = t; this.drift = 0;
       this.tick();
@@ -2455,8 +2788,55 @@ class RightHand {
     const sd = this.stepDur(), last = this.tGrid - sd;
     if (prev && t - last < Math.min(0.09, 0.45 * sd) && t >= last - 0.01) this.emitStep((this.step - 1 + this.len()) % this.len(), Math.max(t, last), true);
   }
+  // ---- generated lead lines (Yngwie mode) ----
+  // Plans a phrase at a time with the line generator (statement -> burst -> long note -> breath), turns its notes
+  // into engine events (pick strokes, hammer-ons / pull-offs, damping of the string just left, bends, wide vibrato
+  // on long notes) and sends them out ~35 ms ahead. The chord's velocity sets the intensity (see lines.js).
+  lineTick() {
+    const now = this.h.now(), ahead = 0.035, o = this.h.options(), rng = this.h.rng;
+    if (!this.gen) this.gen = new root.YngwieGen(this.h);
+    if (!this.lineQ) this.lineQ = [];
+    if (this.tLine == null) this.tLine = now;
+    const beat = 60 / Math.max(40, o.bpm || 120), skill = this.skill();
+    // a tight player: per-note jitter ~3 ms (skilled) to ~6 ms
+    const jit = () => gauss(rng) * (0.006 - 0.003 * skill);
+    while (!this.lineQ.length || this.lineQ[this.lineQ.length - 1].t < now + 0.3) {
+      const ph = this.gen.phrase(this.v.frets, this.vel ?? 0.7);
+      let prev = this.lastLine || null;
+      for (let i = 0; i < ph.notes.length; i++) {
+        const n = ph.notes[i], nx = ph.notes[i + 1];
+        const t = this.tLine + n.beat * beat + jit() + (n.lateS || 0) + (n.hop || 0);
+        const dur = (nx ? nx.beat - n.beat : ph.beats - n.beat) * beat;   // the phrase's last note rings through the breath
+        // accents on the first note of each group (+15-25 %), upstrokes a touch lighter
+        const vel = clamp(this.vel * (n.acc ? 1.12 + 0.08 * rng() : 0.92) * (n.dir < 0 ? 0.95 : 1) * this.velNoise(), 0.05, 1);
+        if ((n.art === 'h' || n.art === 'p') && prev && prev.s === n.s) {
+          this.lineQ.push({ t, ev: { type: n.art === 'h' ? 'hammer' : 'pulloff', s: n.s, from: prev.m, to: n.m, vel: vel * 0.9 } });
+        } else {
+          this.lineQ.push({ t, ev: { type: 'pluck', s: n.s, midi: n.m, vel, dir: n.dir || 1, style: 'pick', bright: n.dir < 0 ? 1.25 : 1,
+            pickPos: (o.pickPos || 0.2) * (0.85 + 0.1 * rng()) } });
+        }
+        // the string just left is muted as the next note sounds (fretting finger lifts, picking-hand palm)
+        if (prev && prev.s !== n.s) this.lineQ.push({ t: t + 0.012, ev: { type: 'damp', s: prev.s, time: 0.03 } });
+        if (n.bend) this.lineQ.push({ t, ev: { type: 'sbend', s: n.s, delay: 0.03 + 0.04 * rng(), amount: 2, rise: 0.08 + 0.07 * rng() } });
+        if (n.vib && dur > 0.25) {
+          // wide one-sided "rock" vibrato, ~5 Hz, starting late and easing in; capped for an acoustic's heavier strings
+          const delay = (n.bend ? 0.2 : 0.12) + 0.15 * rng();
+          this.lineQ.push({ t, ev: { type: 'vibrato', s: n.s, delay, rate: 4.6 + 1.3 * rng(), depth: 0.6 + 0.2 * rng(),
+            dur: Math.max(0.15, dur - delay - 0.03), attack: 0.2 + 0.2 * rng() } });
+        }
+        prev = n;
+      }
+      this.lastLine = prev;
+      this.tLine += ph.beats * beat;
+      this.lineQ.sort((a, b) => a.t - b.t);
+    }
+    const evs = [];
+    while (this.lineQ.length && this.lineQ[0].t < now + ahead) { const q = this.lineQ.shift(); q.ev.t = Math.max(now, q.t); evs.push(q.ev); }
+    if (evs.length) this.h.send(evs);
+  }
+
   realign(t) { if (!this.running) return; this.step = 0; this.tGrid = t; this.drift = 0; }
-  stop() { this.running = false; clearTimeout(this.timer); this.timer = null; this.melody.clear(); }
+  stop() { this.running = false; clearTimeout(this.timer); this.timer = null; this.melody.clear(); this.lineQ = []; this.tLine = null; this.lastLine = null; }
   len() { return this.style().steps.length; }
 
   swingRatio() {
@@ -2466,6 +2846,7 @@ class RightHand {
   }
   tick() {
     if (!this.running) return;
+    if (this.style().gen) { this.lineTick(); this.timer = setTimeout(() => this.tick(), 12); return; }
     const now = this.h.now(), ahead = 0.035;
     while (this.tGrid < now + ahead) {
       this.emitStep(this.step, this.tGrid, false);
@@ -3710,6 +4091,10 @@ function bindHandStyle() {
     const k = $('handStyle').value; strum.set({ style: k }); store.set('o.style', k);
     // each style starts at its typical tempo unless a MIDI clock is setting it
     const clocked = clockTicks.length === 25 && performance.now() - clockTicks[24] < 1000;
+    // a style with a signature pick selects it (Yngwie: Delrin 1.5 mm, bevelled); it can be changed afterwards
+    if (HAND_STYLES[k].pickType && GUITAR_PICKS[HAND_STYLES[k].pickType] && $('pickType').value !== HAND_STYLES[k].pickType) {
+      $('pickType').value = HAND_STYLES[k].pickType; $('pickType').dispatchEvent(new Event('change'));
+    }
     if (!clocked && HAND_STYLES[k].tempo) { $('bpm').value = HAND_STYLES[k].tempo; $('bpmOut').textContent = HAND_STYLES[k].tempo; strum.set({ bpm: HAND_STYLES[k].tempo }); store.set('s.bpm', HAND_STYLES[k].tempo); }
   });
 }

@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 const r = (f) => readFileSync(new URL('./src/' + f, import.meta.url), 'utf8');
 let html = r('index.template.html');
-const parts = { STYLE: r('style.css'), DSP: r('space.js') + '\n' + r('modal.js'), STRUM: r('hand.js') + '\n' + r('strum.js'), APP: r('app.js') };
+const parts = { STYLE: r('style.css'), DSP: r('space.js') + '\n' + r('modal.js'), STRUM: r('lines.js') + '\n' + r('hand.js') + '\n' + r('strum.js'), APP: r('app.js') };
 for (const [k, v] of Object.entries(parts)) {
   if (v.includes('</script')) throw new Error(k + ' contains </script');
   html = html.replace(`/*@@${k}@@*/`, () => v);
