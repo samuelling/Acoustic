@@ -95,6 +95,7 @@ const STYLES = {
     steps: ['R:i>', '-', 'X:all G', 'Ru:i.', '-', 'Ru:i', 'X:all G', 'Ru:i.'] },
   solea: { name: 'Flamenco soleá compás (12 beats)', tempo: 150, sub: 1, beats: 12, nail: true, brush: 0,
     steps: ['p:B', 'R:i', 'R:eami> G', 'p:B', 'R:i', 'R:eami> G', 'R:i', 'R:eami> G', 'p:B', 'R:eami> G', 'Ru:i', 'R:ami> G'] },
+  yngwie: { name: 'Yngwie mode (neoclassical lead lines)', tempo: 120, sub: 4, beats: 4, gen: 'yngwie', pick: true, brush: 0, steps: ['-'] },
   alzapua: { name: 'Flamenco alzapúa (thumb down-up-down)', tempo: 120, sub: 3, beats: 2, nail: true, brush: 0,
     steps: ['p:B!>', 'Pd:top3', 'Pu:top3', 'p:B!>', 'Pd:top3', 'Pu:top3'] }
 };
@@ -124,6 +125,11 @@ class RightHand {
   chord(v, vel, t) {
     const prev = this.v;
     this.v = v; this.vel = vel; this.roles = this.mapRoles(v);
+    if (this.style().gen) {   // a generated line: replan from (about) now over the new harmony
+      this.lineQ = []; this.tLine = Math.max(t, this.h.now() + 0.01);
+      if (!this.running) { this.running = true; this.tick(); }
+      return;
+    }
     if (!this.running) {
       this.running = true; this.step = 0; this.tGrid = t; this.drift = 0;
       this.tick();
@@ -133,8 +139,40 @@ class RightHand {
     const sd = this.stepDur(), last = this.tGrid - sd;
     if (prev && t - last < Math.min(0.09, 0.45 * sd) && t >= last - 0.01) this.emitStep((this.step - 1 + this.len()) % this.len(), Math.max(t, last), true);
   }
+  // ---- generated lead lines (Yngwie mode) ----
+  // Plans two beats ahead with the line generator, turns notes into engine events (pick strokes, hammer-ons /
+  // pull-offs, damping of the string just left, vibrato on long notes) and sends them out ~35 ms ahead.
+  lineTick() {
+    const now = this.h.now(), ahead = 0.035, o = this.h.options(), rng = this.h.rng;
+    if (!this.gen) this.gen = new root.YngwieGen(this.h);
+    if (!this.lineQ) this.lineQ = [];
+    if (this.tLine == null) this.tLine = now;
+    const beat = 60 / Math.max(40, o.bpm || 120), skill = this.skill();
+    while (!this.lineQ.length || this.lineQ[this.lineQ.length - 1].t < now + 0.3) {
+      const notes = this.gen.plan(this.v.frets, 2);
+      let prev = this.lastLine || null;
+      for (const n of notes) {
+        const t = this.tLine + n.beat * beat + this.jitter(n.dur * beat) * 0.6;
+        const dur = n.dur * beat;
+        const vel = clamp(this.vel * (n.accent || Math.abs(n.beat - Math.round(n.beat)) < 1e-6 ? 1.08 : 0.94) * (n.dir < 0 ? 0.93 : 1) * this.velNoise(), 0.05, 1);
+        if (n.art === 'h' || n.art === 'p') this.lineQ.push({ t, ev: { type: n.art === 'h' ? 'hammer' : 'pulloff', s: n.s, from: prev ? prev.m : n.m, to: n.m, vel: vel * 0.9 } });
+        else this.lineQ.push({ t, ev: { type: 'pluck', s: n.s, midi: n.m, vel, dir: n.dir || 1, style: 'pick', bright: n.dir < 0 ? 1.3 : 1, pickPos: (o.pickPos || 0.2) * (0.85 + 0.1 * rng()) } });
+        // the string just left is muted as the next note sounds (fretting-hand lift and picking-hand palm)
+        if (prev && prev.s !== n.s) this.lineQ.push({ t: t + 0.015, ev: { type: 'damp', s: prev.s, time: 0.03 } });
+        if (n.vib) this.lineQ.push({ t, ev: { type: 'vibrato', s: n.s, delay: Math.min(0.12, dur * 0.25), rate: 5.4 + 1.2 * rng(), depth: 0.7 + 0.5 * rng(), dur: Math.max(0.15, dur - 0.02), attack: 0.1 } });
+        prev = n;
+      }
+      this.lastLine = prev;
+      this.tLine += 2 * beat;
+      this.lineQ.sort((a, b) => a.t - b.t);
+    }
+    const evs = [];
+    while (this.lineQ.length && this.lineQ[0].t < now + ahead) { const q = this.lineQ.shift(); q.ev.t = Math.max(now, q.t); evs.push(q.ev); }
+    if (evs.length) this.h.send(evs);
+  }
+
   realign(t) { if (!this.running) return; this.step = 0; this.tGrid = t; this.drift = 0; }
-  stop() { this.running = false; clearTimeout(this.timer); this.timer = null; this.melody.clear(); }
+  stop() { this.running = false; clearTimeout(this.timer); this.timer = null; this.melody.clear(); this.lineQ = []; this.tLine = null; this.lastLine = null; }
   len() { return this.style().steps.length; }
 
   swingRatio() {
@@ -144,6 +182,7 @@ class RightHand {
   }
   tick() {
     if (!this.running) return;
+    if (this.style().gen) { this.lineTick(); this.timer = setTimeout(() => this.tick(), 12); return; }
     const now = this.h.now(), ahead = 0.035;
     while (this.tGrid < now + ahead) {
       this.emitStep(this.step, this.tGrid, false);

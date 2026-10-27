@@ -624,7 +624,8 @@ class GuitarEngine {
   updateCoefs(v, force) {
     if (!force && Math.abs(v.detune - v.appliedDetune) < 2e-6 && Math.abs(v.extra - v.appliedExtra) < 0.05) return;
     const sr = this.sr, bendR = this.bend === 0 ? 1 : Math.pow(2, this.bend / 12);
-    const dt = (1 + v.detune) * bendR * (v.shift ? Math.pow(2, v.shift / 12) : 1);   // shift: frets slid through
+    const sh = (v.shift || 0) + (v.vibShift || 0);
+    const dt = (1 + v.detune) * bendR * (sh ? Math.pow(2, sh / 12) : 1);   // shift: frets slid through; vibShift: finger vibrato
     const ex = v.extra;
     for (let c = 0; c < v.n; c++) {
       const f = v.w[c] / TAU;
@@ -674,6 +675,7 @@ class GuitarEngine {
       case 'touch': this.touchString(ev); break;
       case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
       case 'tap': this.tap(ev); break;
+      case 'vibrato': { const st = this.strings[ev.s]; if (st) st.vib = { at: this.clock + Math.round((ev.delay || 0) * this.sr), rate: ev.rate || 5.5, depth: ev.depth ?? 0.6, dur: ev.dur || 0.6, attack: ev.attack || 0.12, jit: (this.rng() - 0.5) * 0.6 }; break; }
       case 'palm':   // the palm lands on (or lifts from) the strings near the bridge, ringing ones included
         for (const st of this.strings) for (const v of st.voices) {
           if (ev.on) { if (v.extraTarget < 9) { v.extraTarget = 9; v.extraRate = 0.5; v.palmed = true; } }
@@ -1147,6 +1149,19 @@ class GuitarEngine {
   control() {
     this.bend += (this.bendTarget - this.bend) * 0.25;
     for (const s of this.strings) {
+      // finger vibrato on this string: the fretting finger bends the string and lets it back (pitch moves up from
+      // the note, not around it), with the width easing in; a wide, violin-like vibrato needs a scalloped board
+      const vb = s.vib;
+      if (vb) {
+        const t = (this.clock - vb.at) / this.sr, v = s.v;
+        if (t >= vb.dur || v.midi === undefined) { v.vibShift = 0; s.vib = null; this.updateCoefs(v, true); }
+        else if (t >= 0) {
+          const ramp = Math.min(1, t / vb.attack), fade = Math.min(1, (vb.dur - t) / 0.08);
+          const ph = TAU * vb.rate * t + vb.jit * Math.sin(TAU * 0.7 * t);
+          v.vibShift = vb.depth * ramp * fade * (0.5 - 0.5 * Math.cos(ph));
+          this.updateCoefs(v, true);
+        }
+      }
       let envSum = 0;
       for (const v of s.voices) {
         if (!v.nact) continue;
