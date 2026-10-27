@@ -101,28 +101,79 @@ const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 // ---------------- body ----------------
 // ---------------- construction & contact ----------------
-// Multipliers for top- and back-dominated modes: f (frequency), m (effective mass), dq (added loss 1/Q),
-// rad (radiation); finish adds loss rising with frequency; holding adds back/top loss and a small shift.
+// Wood data (12% MC): density kg/m3, E along grain GPa, E across grain GPa, Q along grain, Q across grain.
+// Wikipedia/USDA Wood Handbook moduli; damping from Bremaud et al. 2012, Yoshikawa, Haines (via Richardson),
+// Stephens 2015. Reference build: Sitka spruce top, Indian rosewood back, thin nitro finish, standard X bracing.
 const WOODS = {
   top: {
-    sitka:     { name: 'Sitka spruce', f: 1, m: 1, dq: 0, rad: 1 },
-    adirondack:{ name: 'Adirondack spruce', f: 1.03, m: 1.0, dq: -0.002, rad: 1.05 },
-    engelmann: { name: 'Engelmann spruce', f: 0.97, m: 0.95, dq: 0.001, rad: 1.03 },
-    cedar:     { name: 'Western red cedar', f: 0.96, m: 0.93, dq: 0.004, rad: 1.06 },
-    redwood:   { name: 'Redwood', f: 0.97, m: 0.97, dq: 0.003, rad: 1.02 },
-    mahogany:  { name: 'Mahogany top', f: 0.92, m: 1.25, dq: 0.004, rad: 0.85 },
-    koa:       { name: 'Koa top', f: 0.95, m: 1.35, dq: 0.002, rad: 0.82 }
+    sitka:      { name: 'Sitka spruce', rho: 425, E: 11.0, ER: 0.86, QL: 150, QR: 47 },
+    adirondack: { name: 'Adirondack spruce', rho: 435, E: 10.8, ER: 0.86, QL: 150, QR: 47 },
+    engelmann:  { name: 'Engelmann spruce', rho: 385, E: 9.4, ER: 1.20, QL: 150, QR: 47 },
+    european:   { name: 'European spruce', rho: 405, E: 9.7, ER: 0.70, QL: 119, QR: 40 },
+    cedar:      { name: 'Western red cedar', rho: 370, E: 7.7, ER: 0.62, QL: 139, QR: 45 },
+    redwood:    { name: 'Redwood', rho: 415, E: 8.4, ER: 0.73, QL: 135, QR: 44 },
+    mahogany:   { name: 'Mahogany top', rho: 590, E: 10.1, ER: 1.08, QL: 156, QR: 60 },
+    koa:        { name: 'Koa top', rho: 610, E: 10.4, ER: 1.10, QL: 140, QR: 58 }
   },
   back: {
-    indian:    { name: 'Indian rosewood', f: 1, m: 1, dq: 0, rad: 1 },
-    brazilian: { name: 'Brazilian rosewood', f: 1.02, m: 1.02, dq: -0.003, rad: 1.02 },
-    mahogany:  { name: 'Mahogany', f: 0.95, m: 0.8, dq: 0.004, rad: 0.95 },
-    maple:     { name: 'Maple', f: 1.05, m: 0.9, dq: 0.007, rad: 0.92 },
-    koa:       { name: 'Koa', f: 1.0, m: 0.95, dq: 0.002, rad: 0.97 },
-    walnut:    { name: 'Walnut', f: 0.98, m: 0.88, dq: 0.004, rad: 0.95 },
-    sapele:    { name: 'Sapele', f: 0.98, m: 0.9, dq: 0.004, rad: 0.95 }
+    indian:    { name: 'Indian rosewood', rho: 830, E: 11.5, ER: 2.4, QL: 137, QR: 90 },
+    brazilian: { name: 'Brazilian rosewood', rho: 835, E: 13.9, ER: 2.8, QL: 170, QR: 100 },
+    mahogany:  { name: 'Mahogany', rho: 590, E: 10.1, ER: 1.08, QL: 156, QR: 60 },
+    sapele:    { name: 'Sapele', rho: 670, E: 12.0, ER: 1.25, QL: 120, QR: 55 },
+    maple:     { name: 'Maple', rho: 705, E: 12.6, ER: 1.66, QL: 75, QR: 40 },
+    koa:       { name: 'Koa', rho: 610, E: 10.4, ER: 1.10, QL: 140, QR: 58 },
+    walnut:    { name: 'Walnut', rho: 610, E: 11.6, ER: 1.23, QL: 125, QR: 55 },
+    cocobolo:  { name: 'Cocobolo', rho: 1095, E: 18.7, ER: 3.0, QL: 116, QR: 80 }
   }
 };
+// How a wood changes a plate depends on how it is thicknessed: a luthier thins each top to the same stiffness
+// (h ~ E^-1/3, so mass ~ rho E^-1/3 changes, frequency barely), a factory keeps thickness (stiffness ~ E, mass ~ rho).
+// In a steel-string top roughly half the low-mode stiffness is in the braces; the plate is ~3/4 of the moving mass.
+function plateFactors(w, ref, style) {
+  const re = w.E / ref.E, rr = w.rho / ref.rho, rER = w.ER / ref.ER;
+  const h = style === 'factory' ? 1 : Math.pow(re, -1 / 3);
+  const Kp = re * h * h * h, Mp = rr * h, KR = rER * h * h * h;
+  return {
+    low: { K: 0.5 + 0.5 * Kp, M: 0.25 + 0.75 * Mp },
+    hf: { K: (0.35 + 0.65 * Kp) * Math.pow(KR / Math.max(1e-3, Kp), 0.22), M: 0.15 + 0.85 * Mp },
+    lossL: 1 / w.QL - 1 / ref.QL, lossR: 1 / w.QR - 1 / ref.QR
+  };
+}
+function constructionFactors(b) {
+  const style = b.style === 'factory' ? 'factory' : 'luthier';
+  const tw = WOODS.top[b.top] || WOODS.top.sitka, bw = WOODS.back[b.back] || WOODS.back.indian;
+  const T = plateFactors(tw, WOODS.top.sitka, style);
+  const Bk = plateFactors(bw, WOODS.back.indian, style);
+  if (style === 'luthier') {
+    // Carcagno et al. 2018: with the back thicknessed to compensate, back modes moved by only a few percent
+    const cr = Math.sqrt(bw.E / bw.rho) / Math.sqrt(WOODS.back.indian.E / WOODS.back.indian.rho);
+    const fb = 1 + Math.max(-0.02, Math.min(0.02, (cr - 1) * 0.5));
+    Bk.low = { K: fb * fb, M: 1 }; Bk.hf = { K: fb * fb, M: 1 };
+  }
+  const hold = HOLDS[b.hold] || HOLDS.seated;
+  // finish (Stephens 2015, thin nitro on Sitka): mass +7%, Q -7% low modes, -30% cross-grain modes;
+  // values below are relative to the reference thin nitro. Thick poly ~2x the film: about twice the effect.
+  const fin = b.finish === 'poly' ? { M: 1.07, qLow: 0.92, qHf: 0.7 } : b.finish === 'none' ? { M: 0.935, qLow: 1.07, qHf: 1.35 } : { M: 1, qLow: 1, qHf: 1 };
+  // bracing (no published measurements; luthier lore, kept small): scalloping lowers stiffness of the low modes
+  const br = b.bracing === 'scalloped' ? { K: 0.9, M: 0.98 } : b.bracing === 'forward' ? { K: 0.94, M: 1 } : { K: 1, M: 1 };
+  return {
+    hold,
+    // multipliers for one mode, given its back share p, a 0..1 "high frequency / cross-grain" weight, and low/stat
+    mode(p, hf, isLow) {
+      const tL = isLow ? T.low : { K: T.low.K * (1 - hf) + T.hf.K * hf, M: T.low.M * (1 - hf) + T.hf.M * hf };
+      const bL = isLow ? Bk.low : { K: Bk.low.K * (1 - hf) + Bk.hf.K * hf, M: Bk.low.M * (1 - hf) + Bk.hf.M * hf };
+      const topK = tL.K * (isLow || hf < 0.5 ? br.K : 1), topM = tL.M * fin.M * br.M;
+      const K = Math.pow(topK, 1 - p) * Math.pow(bL.K, p), M = Math.pow(topM, 1 - p) * Math.pow(bL.M, p);
+      // wood loss is ~20-30% of a mode's total loss: add the change in the wood's own loss (along grain for low
+      // modes, across grain as frequency rises)
+      const dTop = T.lossL * (1 - hf) + T.lossR * hf, dBack = Bk.lossL * (1 - hf) + Bk.lossR * hf;
+      const dq = (1 - p) * dTop * 0.3 + p * dBack * 0.3;
+      const qFin = (1 - p) * (fin.qLow * (1 - hf) + fin.qHf * hf) + p;
+      return { f: Math.sqrt(K / M), m: M, dq, qMul: qFin, rad: Math.pow(1 / M, isLow ? 1 : 0.5) };
+    }
+  };
+}
+
 // Player contact (Le Carrou, Pate & Chomette 2019: damping always rises, frequencies move < 2-5%; Woodhouse 2004:
 // low-mode damping depends strongly on how the guitar is held, little above ~300 Hz). Back-dominated modes take the
 // most: torso against the back roughly halves their Q; A0 and T(1,1) gain ~20-30% damping.
@@ -131,13 +182,6 @@ const HOLDS = {
   seated: { name: 'Held, seated', back: 0.03, top: 0.002, fshift: -0.012 },
   firm:   { name: 'Hugged close', back: 0.05, top: 0.004, fshift: -0.02 }
 };
-function constructionFactors(b) {
-  const top = WOODS.top[b.top] || WOODS.top.sitka, back = WOODS.back[b.back] || WOODS.back.indian;
-  const hold = HOLDS[b.hold] || HOLDS.seated;
-  const finishDq = b.finish === 'poly' ? 0.004 : b.finish === 'none' ? -0.002 : 0;
-  const lowF = b.bracing === 'scalloped' ? 0.96 : b.bracing === 'forward' ? 0.97 : 1;
-  return { top, back, hold, finishDq, lowF };
-}
 
 // Region patterns of the low modes over [hole, bridge, bass, treble, tail, upper, back] (volume-velocity shares)
 const REGION_PATTERNS = {
@@ -183,14 +227,14 @@ class Body {
     // construction (woods, bracing, finish) and the player's contact reshape every mode by its top/back share
     for (let i = 0; i < n; i++) {
       const p = pb[i], hf = Math.min(1, Math.max(0, (f[i] - 400) / 3000));
-      f[i] *= Math.pow(K.top.f, 1 - p) * Math.pow(K.back.f, p) * (i < nLow ? K.lowF : 1);
-      m[i] *= Math.pow(K.top.m, 1 - p) * Math.pow(K.back.m, p);
-      // loss factors add: 1/Q = 1/Q0 + extra losses from wood, finish and contact
-      let invQ = 1 / Q[i] + (1 - p) * K.top.dq + p * K.back.dq + K.finishDq * (0.5 + hf)
-        + (K.hold.back * p + K.hold.top * (1 - p)) * (i < nLow ? 1 : 1 - 0.5 * hf);
+      const F = K.mode(p, hf, i < nLow);
+      f[i] *= F.f;
+      m[i] *= F.m;
+      // loss factors add: 1/Q = 1/Q0 (scaled by finish) + change in wood loss + the player's contact
+      let invQ = 1 / (Q[i] * F.qMul) + F.dq + (K.hold.back * p + K.hold.top * (1 - p)) * (i < nLow ? 1 : 1 - 0.5 * hf);
       Q[i] = 1 / Math.max(1 / 400, invQ);
       f[i] *= 1 + K.hold.fshift * p;
-      rad[i] *= Math.pow(K.top.rad, 1 - p) * Math.pow(K.back.rad, p);
+      rad[i] *= F.rad;
     }
     this.n = n; this.nLow = nLow;
     this.f = Float64Array.from(f); this.Q = Float64Array.from(Q); this.m = Float64Array.from(m);
@@ -299,7 +343,7 @@ class GuitarEngine {
     this.params = {
       preset: 'dreadnought', tuning: STD.slice(), capo: 0, brightness: 0.55, body: 1.0, bodySize: 1.0,
       sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high',
-      build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated' },
+      build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated', style: 'luthier' },
       scene: { mics: 'fret12', hold: 'seated' }
     };
     this.bend = 0; this.bendTarget = 0;

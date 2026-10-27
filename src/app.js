@@ -47,12 +47,12 @@ async function start() {
   const load = benchmark();
   quality = load > 0.3 ? 'eco' : 'high';
   ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
-  master = ctx.createGain(); master.gain.value = 1;
+  master = ctx.createGain(); master.gain.value = 0.7;
   dryGain = ctx.createGain(); wetGain = ctx.createGain();
   // the room: one convolver per source side (top / back), impulse responses from the image-source model
   convF = ctx.createConvolver(); convB = ctx.createConvolver(); convF.normalize = false; convB.normalize = false;
   const limiter = ctx.createDynamicsCompressor();
-  limiter.threshold.value = -4; limiter.knee.value = 4; limiter.ratio.value = 12; limiter.attack.value = 0.001; limiter.release.value = 0.12;
+  limiter.threshold.value = -6; limiter.knee.value = 4; limiter.ratio.value = 14; limiter.attack.value = 0.001; limiter.release.value = 0.12;
   let src;
   try {
     const code = document.getElementById('dsp-src').textContent;
@@ -99,7 +99,7 @@ const scene = {
 };
 const build = {
   top: store.get('b.top', 'sitka'), back: store.get('b.back', 'indian'), bracing: store.get('b.bracing', 'standard'),
-  finish: store.get('b.finish', 'nitro'), hold: store.get('b.hold', 'seated')
+  finish: store.get('b.finish', 'nitro'), hold: store.get('b.hold', 'seated'), style: store.get('b.style', 'luthier')
 };
 function sceneObject() {
   const S = SP(), room = S.ROOMS[scene.room];
@@ -298,11 +298,11 @@ function bindSpace() {
   fillSelect('hold', Object.entries(GUITAR_HOLDS).map(([k, v]) => [k, v.name]), build.hold);
   fillSelect('micSetup', Object.entries(S.MIC_SETUPS).map(([k, v]) => [k, v.name]), scene.mics);
   fillSelect('roomSel', Object.entries(S.ROOMS).map(([k, v]) => [k, v.name]), scene.room);
-  $('bracing').value = build.bracing; $('finish').value = build.finish; $('micPattern').value = scene.pattern;
+  $('bracing').value = build.bracing; $('finish').value = build.finish; $('buildStyle').value = build.style; $('micPattern').value = scene.pattern;
   $('micDist').value = Math.round(scene.dist * 100); $('micDistOut').textContent = 'x' + scene.dist.toFixed(1);
   $('roomTrim').value = scene.trim; $('roomTrimOut').textContent = (scene.trim > 0 ? '+' : '') + scene.trim + ' dB';
   const onBuild = (id, key) => $(id).addEventListener('change', () => { build[key] = $(id).value; store.set('b.' + key, build[key]); applyScene(); });
-  onBuild('topWood', 'top'); onBuild('backWood', 'back'); onBuild('bracing', 'bracing'); onBuild('finish', 'finish'); onBuild('hold', 'hold');
+  onBuild('topWood', 'top'); onBuild('backWood', 'back'); onBuild('buildStyle', 'style'); onBuild('bracing', 'bracing'); onBuild('finish', 'finish'); onBuild('hold', 'hold');
   const onScene = (id, key) => $(id).addEventListener('change', () => { scene[key] = $(id).value; store.set('sp.' + key, scene[key]); applyScene(); });
   onScene('micSetup', 'mics'); onScene('micPattern', 'pattern'); onScene('roomSel', 'room');
   $('micDist').addEventListener('input', () => { scene.dist = +$('micDist').value / 100; $('micDistOut').textContent = 'x' + scene.dist.toFixed(1); store.set('sp.dist', scene.dist); applyScene(); });

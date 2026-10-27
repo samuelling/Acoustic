@@ -232,6 +232,8 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <div class="row"><label for="bodysize">Body size</label><input id="bodysize" type="range" min="80" max="125" value="100"><output id="bodysizeOut">100%</output></div>
       <div class="row"><label for="symp">Sympathetic</label><input id="symp" type="range" min="0" max="100" value="50"><output id="sympOut">50</output></div>
       <div class="row"><label for="noise">Finger noise</label><input id="noise" type="range" min="0" max="100" value="50"><output id="noiseOut">50</output></div>
+      <div class="row wide"><label for="buildStyle">Build</label>
+        <select id="buildStyle"><option value="luthier">Luthier: plates thinned to equal stiffness</option><option value="factory">Factory: fixed plate thickness</option></select></div>
       <div class="row wide"><label for="topWood">Top</label><select id="topWood"></select></div>
       <div class="row wide"><label for="backWood">Back &amp; sides</label><select id="backWood"></select></div>
       <div class="row wide"><label for="bracing">Bracing</label>
@@ -252,7 +254,7 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
         <select id="micPattern"><option value="default">As set up</option><option value="omni">Omni</option><option value="cardioid">Cardioid</option><option value="supercardioid">Supercardioid</option><option value="fig8">Figure-8</option></select></div>
       <div class="row"><label for="micDist">Mic distance</label><input id="micDist" type="range" min="40" max="400" value="100"><output id="micDistOut">x1.0</output></div>
       <div class="row wide"><label for="roomSel">Room</label><select id="roomSel"></select></div>
-      <div class="row"><label for="roomTrim">Room level</label><input id="roomTrim" type="range" min="-24" max="12" value="0"><output id="roomTrimOut">as heard</output></div>
+      <div class="row"><label for="roomTrim">Room level</label><input id="roomTrim" type="range" min="-24" max="12" value="0"><output id="roomTrimOut">0 dB</output></div>
       <div class="toggles"><button class="btn" id="turnGuitar" type="button">Turn guitar 45°</button></div>
     </div>
 
@@ -271,6 +273,10 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <p><b>Bridge.</b> The string's energy leaks into the guitar through the bridge, and how fast depends on how easily the bridge moves at that exact frequency. A harmonic that lands on a body resonance drains in a fraction of a second; one that lands between resonances rings for many seconds. The bridge also pulls each harmonic's pitch slightly and moves differently along and across the top, so the two swing directions split by a fraction of a hertz to a few hertz and beat. That is why every harmonic decays at its own rate, fades, comes back, and crosses its neighbors, which is most of what makes a real note sound alive.</p>
       <p><b>Body.</b> The same body drives the sound: an air resonance near 100 Hz, the top plate pair near 195 and 205 Hz, dipole modes that radiate less, then hundreds of denser modes spaced about 38 Hz apart up to 9 kHz, each moving the bridge at its own angle (Woodhouse's statistical model, scaled to measured guitar admittance, about −45 dB re 1 m/Ns). Two mic positions hear the modes with different weights.</p>
       <p><b>Pick.</b> The pick pushes the string sideways, scrapes along it for a few milliseconds, then slips off. The pluck point carves notches into the harmonic series, the pick width and slip time set the brightness, and the push direction sets the balance of the two swing directions. While loaded, the string presses the bridge sideways; that force vanishes at release, kicking the body's air and top modes — the soft thump under every note. Hard plucks briefly raise string tension, so notes start a few cents sharp, and they excite the string's lengthwise resonances (around 1.4 kHz on the low E), part of a steel string's metallic edge.</p>
+      <p><b>Wood.</b> Each species enters as measured density, stiffness along and across the grain, and internal damping. What that does to the sound depends on how the guitar is built: a luthier thins each plate to the same stiffness, so a lighter wood mostly makes the top lighter; a factory keeps thickness fixed, so stiffness and mass both change. Every body mode is shifted by its share of top and back motion. The effects are real but small, as blind tests of tonewoods have found: a few percent in mode frequency, one to three decibels in level.</p>
+      <p><b>The player.</b> Held against the torso, the back can't ring freely: back-plate modes lose about half their Q, the air and top resonances about a quarter, and the player's body absorbs what the back radiates. On a stand, the back sings.</p>
+      <p><b>Microphones.</b> The guitar radiates from several places at once: the soundhole, the bridge, the two halves of the lower bout, below the bridge, the upper bout and the back. Each body mode drives them in its own pattern (the air mode through the soundhole, dipole modes with halves in opposite phase). Each mic hears every region at its true distance and angle, through its polar pattern, with the bass boost directional mics get up close, and with regions on the far side of the body heard only by diffraction.</p>
+      <p><b>The room.</b> Reflections are traced by the image-source method: each wall bounce is attenuated per octave by its material, per ray by the direction it left the guitar (the top radiates forward, the back backward, the player absorbs) and by the direction it reaches the mic. A late tail follows, decaying per octave at the Eyring rate for the room's volume and surfaces, at the energy level room acoustics predicts, so moving the mics away naturally trades direct sound for room sound.</p>
       <p><b>Calibration.</b> Decay per harmonic, inharmonicity, brightness over time, beating depth, and strum timing and brightness were measured from recordings of real steel-string guitars, single notes and labeled down and up strums, and the model was checked against them.</p>
       <p><b>Hand.</b> Notes that arrive together become a chord, placed on the neck with a fingering search (span, barres, open strings, voice leading). A downstroke crosses the strings in about 35–55 ms, as measured strums do; upstrokes are quicker, catch mostly the treble strings, and come out slightly brighter. Direction follows a pendulum: the hand swings every subdivision, so the gap since your last chord decides down or up.</p>
     </details>
@@ -301,37 +307,42 @@ const MATERIALS = {
   stone:      { name: 'Stone', a: [0.02, 0.02, 0.03, 0.04, 0.05, 0.05, 0.06] },
   plaster:    { name: 'Plaster / drywall', a: [0.29, 0.10, 0.05, 0.04, 0.07, 0.09, 0.10] },
   woodFloor:  { name: 'Wood floor', a: [0.15, 0.11, 0.10, 0.07, 0.06, 0.07, 0.07] },
-  woodPanel:  { name: 'Wood paneling', a: [0.42, 0.21, 0.10, 0.08, 0.06, 0.06, 0.06] },
+  woodPanel:  { name: 'Wood paneling', a: [0.30, 0.25, 0.20, 0.17, 0.15, 0.10, 0.09] },
+  plasterHard:{ name: 'Plaster on masonry', a: [0.013, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06] },
+  pews:       { name: 'Wooden pews', a: [0.10, 0.12, 0.14, 0.16, 0.17, 0.17, 0.17] },
   carpet:     { name: 'Carpet on concrete', a: [0.02, 0.06, 0.14, 0.37, 0.60, 0.65, 0.66] },
   carpetPad:  { name: 'Carpet on pad', a: [0.08, 0.24, 0.57, 0.69, 0.71, 0.73, 0.74] },
   curtain:    { name: 'Heavy curtains', a: [0.14, 0.35, 0.55, 0.72, 0.70, 0.65, 0.62] },
   glass:      { name: 'Window glass', a: [0.35, 0.25, 0.18, 0.12, 0.07, 0.04, 0.03] },
   tile:       { name: 'Ceramic tile', a: [0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.03] },
-  foam:       { name: 'Acoustic panels', a: [0.25, 0.65, 0.95, 1.00, 0.95, 0.90, 0.88] },
-  sofa:       { name: 'Upholstered furniture', a: [0.35, 0.45, 0.57, 0.61, 0.59, 0.55, 0.52] },
+  foam:       { name: 'Acoustic foam', a: [0.08, 0.25, 0.60, 0.90, 0.95, 0.98, 0.98] },
+  wool:       { name: 'Mineral wool panels', a: [0.45, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0] },
+  sofa:       { name: 'Upholstered furniture', a: [0.70, 0.76, 0.81, 0.84, 0.84, 0.81, 0.78] },
   audience:   { name: 'Seated audience', a: [0.60, 0.74, 0.88, 0.96, 0.93, 0.85, 0.80] },
-  books:      { name: 'Bookshelves', a: [0.30, 0.35, 0.40, 0.45, 0.50, 0.50, 0.50] },
-  grass:      { name: 'Grass', a: [0.11, 0.26, 0.60, 0.69, 0.92, 0.99, 0.99] },
+  books:      { name: 'Bookshelves', a: [0.30, 0.40, 0.40, 0.30, 0.30, 0.30, 0.30] },
+  grass:      { name: 'Grass', a: [0.10, 0.25, 0.45, 0.60, 0.70, 0.75, 0.78] },
   open:       { name: 'Open air', a: [1, 1, 1, 1, 1, 1, 1] }
 };
 // air absorption, energy attenuation coefficient m (1/m) at 20 C, 50% RH (ISO 9613-1)
-const AIR_M = [0.0001, 0.0003, 0.0006, 0.0011, 0.0024, 0.0072, 0.0245];
+const AIR_M = [0.0001, 0.0003, 0.00063, 0.00107, 0.00227, 0.0065, 0.020]; // effective full-octave (Wenmaekers 2014)
 
 // surfaces: floor, ceiling, x0 (left), x1 (right), y0 (front, behind the mics), y1 (back, behind the player)
 const ROOMS = {
-  booth:    { name: 'Dead booth', dims: [2.4, 2.0, 2.4], walls: { floor: 'carpetPad', ceiling: 'foam', x0: 'foam', x1: 'foam', y0: 'foam', y1: 'foam' }, extra: [], scatter: 0.4 },
+  booth:    { name: 'Vocal booth', dims: [2.0, 1.6, 2.3], walls: { floor: 'carpet', ceiling: 'plaster', x0: 'foam', x1: 'woodPanel', y0: 'foam', y1: 'woodPanel' }, extra: [], scatter: 0.4 },
   living:   { name: 'Living room', dims: [5.6, 4.4, 2.6], walls: { floor: 'woodFloor', ceiling: 'plaster', x0: 'plaster', x1: 'glass', y0: 'plaster', y1: 'books' },
-              extra: [{ mat: 'carpet', area: 6, on: 'floor' }, { mat: 'sofa', area: 5, on: 'floor' }, { mat: 'curtain', area: 5, on: 'x1' }], scatter: 0.35 },
+              extra: [{ mat: 'carpet', area: 6, on: 'floor' }, { mat: 'sofa', area: 3, on: 'floor' }, { mat: 'curtain', area: 5, on: 'x1' }], scatter: 0.35 },
   bedroom:  { name: 'Bedroom', dims: [4.0, 3.6, 2.5], walls: { floor: 'carpetPad', ceiling: 'plaster', x0: 'plaster', x1: 'plaster', y0: 'plaster', y1: 'glass' },
-              extra: [{ mat: 'sofa', area: 5, on: 'floor' }, { mat: 'curtain', area: 3, on: 'y1' }], scatter: 0.35 },
-  bathroom: { name: 'Tiled bathroom', dims: [2.6, 2.2, 2.4], walls: { floor: 'tile', ceiling: 'plaster', x0: 'tile', x1: 'tile', y0: 'tile', y1: 'glass' }, extra: [], scatter: 0.15 },
-  studio:   { name: 'Studio live room', dims: [8.0, 6.0, 3.4], walls: { floor: 'woodFloor', ceiling: 'foam', x0: 'woodPanel', x1: 'woodPanel', y0: 'curtain', y1: 'woodPanel' }, extra: [], scatter: 0.5 },
-  recital:  { name: 'Wooden recital hall', dims: [22, 14, 8], walls: { floor: 'woodFloor', ceiling: 'woodPanel', x0: 'woodPanel', x1: 'woodPanel', y0: 'plaster', y1: 'woodPanel' },
-              extra: [{ mat: 'audience', area: 90, on: 'floor' }], scatter: 0.5 },
-  hall:     { name: 'Concert hall', dims: [38, 23, 18], walls: { floor: 'woodFloor', ceiling: 'plaster', x0: 'plaster', x1: 'plaster', y0: 'woodPanel', y1: 'plaster' },
-              extra: [{ mat: 'audience', area: 560, on: 'floor' }], scatter: 0.6 },
+              extra: [{ mat: 'sofa', area: 3.5, on: 'floor' }, { mat: 'curtain', area: 3, on: 'y1' }], scatter: 0.35 },
+  bathroom: { name: 'Tiled bathroom', dims: [2.6, 2.2, 2.4], walls: { floor: 'tile', ceiling: 'plaster', x0: 'tile', x1: 'tile', y0: 'tile', y1: 'glass' },
+              extra: [{ mat: 'curtain', area: 1.2, on: 'x1' }], scatter: 0.15 },
+  studio:   { name: 'Studio live room', dims: [8.0, 6.0, 3.4], walls: { floor: 'woodFloor', ceiling: 'woodPanel', x0: 'woodPanel', x1: 'plaster', y0: 'curtain', y1: 'woodPanel' },
+              extra: [{ mat: 'wool', area: 4, on: 'ceiling' }], scatter: 0.5 },
+  recital:  { name: 'Wooden recital hall', dims: [24, 15, 9], walls: { floor: 'woodFloor', ceiling: 'plasterHard', x0: 'woodPanel', x1: 'woodPanel', y0: 'plasterHard', y1: 'woodPanel' },
+              extra: [{ mat: 'audience', area: 230, on: 'floor' }], scatter: 0.5 },
+  hall:     { name: 'Concert hall (Boston-like)', dims: [38, 23, 18.6], walls: { floor: 'woodFloor', ceiling: 'plasterHard', x0: 'plasterHard', x1: 'plasterHard', y0: 'woodPanel', y1: 'plasterHard' },
+              extra: [{ mat: 'audience', area: 760, on: 'floor' }, { mat: 'audience', area: 160, on: 'x0' }, { mat: 'audience', area: 160, on: 'x1' }], scatter: 0.6 },
   church:   { name: 'Stone church', dims: [42, 16, 18], walls: { floor: 'stone', ceiling: 'stone', x0: 'stone', x1: 'glass', y0: 'stone', y1: 'stone' },
-              extra: [{ mat: 'woodPanel', area: 120, on: 'floor' }], scatter: 0.45 },
+              extra: [{ mat: 'pews', area: 500, on: 'floor' }, { mat: 'audience', area: 110, on: 'floor' }, { mat: 'woodPanel', area: 150, on: 'y1' }], scatter: 0.45 },
   outdoors: { name: 'Outdoors on grass', dims: [200, 200, 200], walls: { floor: 'grass', ceiling: 'open', x0: 'open', x1: 'open', y0: 'open', y1: 'open' }, extra: [], scatter: 0.2, open: true }
 };
 
@@ -612,7 +623,7 @@ function buildIRs(scene, sr) {
         if (order > maxOrder) continue;
         const I = [(1 - 2 * px) * S[0] + 2 * nx * Lx, (1 - 2 * py) * S[1] + 2 * ny * Ly, (1 - 2 * pz) * S[2] + 2 * nz * Lz];
         // randomize higher-order images slightly (diffusion; avoids flutter from a perfect lattice)
-        if (order > 1) for (let a = 0; a < 3; a++) I[a] += (r() - 0.5) * 0.12 * Math.min(1, order / 4);
+        if (order > 1) for (let a = 0; a < 3; a++) I[a] += (r() - 0.5) * 0.16 * Math.min(1, order / 4); // randomized image method, <= 8 cm
         const v = sub(M.room, I), d = len(v), t = d / C;
         if (t > tMix) continue;
         const arrive = scl(v, -1 / d);                       // from mic toward the image
@@ -645,39 +656,54 @@ function buildIRs(scene, sr) {
   const win = new Float64Array(NF); for (let i = 0; i < NF; i++) win[i] = Math.sin(Math.PI * (i + 0.5) / NF); // sqrt-hann pair
   const nFrames = Math.ceil(N / hop);
   const meanFree = 4 * E.V / E.S;
+  // inter-mic coherence of the diffuse tail: sin(kd)/(kd) for spaced omnis (spacing d); coincident directional pairs
+  // keep partial coherence from their overlapping patterns
+  const m0 = mics[0], m1 = mics[1] || mics[0];
+  const spacing = mics.length > 1 ? len(sub(m0.p, m1.p)) : 0.3;
+  const coincident = spacing < 0.05;
+  const coh = new Float64Array(NF / 2 + 1);
+  for (let k = 0; k <= NF / 2; k++) {
+    const f = Math.max(1, k * sr / NF), kd = 2 * Math.PI * f / C * (m0.ear ? 0.22 : spacing);
+    coh[k] = coincident ? 0.55 : Math.max(0, Math.sin(kd) / kd);
+  }
   for (const side of ['front', 'back']) {
     // fraction of the source's power going into this side's directions (diffuse-field weighting)
     const sidePow = []; for (let b = 0; b < 7; b++) {
-      let s = 0, n = 0;
-      for (let k = 0; k < 64; k++) { const z = -1 + (k + 0.5) / 32; s += Math.pow(sourceGain(side, [0, 0, z], b, held), 2); n++; }
-      sidePow.push(s / n);
+      let sp = 0, n = 0;
+      for (let k = 0; k < 64; k++) { const z = -1 + (k + 0.5) / 32; sp += Math.pow(sourceGain(side, [0, 0, z], b, held), 2); n++; }
+      sidePow.push(sp / n);
     }
-    for (let mi = 0; mi < Math.min(2, mics.length); mi++) {
-      const M = mics[mi], buf = out[side][mi];
-      const P = M.ear ? { diffuse: 0.9 } : (PATTERNS[M.pattern] || PATTERNS.omni);
-      const rg = rng32(777 + mi * 31 + (side === 'back' ? 999 : 0));
-      const curve = new Float64Array(NF / 2 + 1), gains = new Array(7);
-      const re = new Float64Array(NF), im = new Float64Array(NF);
-      for (let fI = 0; fI < nFrames; fI++) {
-        const t = (fI * hop + NF / 2) / sr;
-        const nRef = C * t / meanFree;
-        const ramp = t >= tMix ? 1 : Math.max(0, 1 - Math.pow(1 - scat, nRef)) * 0.9 + 0.1 * Math.min(1, t / tMix) ** 2;
+    const nm = Math.min(2, mics.length);
+    const rg = rng32(777 + (side === 'back' ? 999 : 0));
+    const curves = [new Float64Array(NF / 2 + 1), new Float64Array(NF / 2 + 1)], gains = new Array(7);
+    const r1 = new Float64Array(NF), i1 = new Float64Array(NF), r2 = new Float64Array(NF), i2 = new Float64Array(NF);
+    const o1 = new Float64Array(NF), q1 = new Float64Array(NF);
+    for (let fI = 0; fI < nFrames; fI++) {
+      const t = (fI * hop + NF / 2) / sr;
+      const nRef = C * t / meanFree;
+      const ramp = t >= tMix ? 1 : Math.max(0, 1 - Math.pow(1 - scat, nRef)) * 0.9 + 0.1 * Math.min(1, t / tMix) ** 2;
+      for (let mi = 0; mi < nm; mi++) {
+        const P = mics[mi].ear ? { diffuse: 0.9 } : (PATTERNS[mics[mi].pattern] || PATTERNS.omni);
         for (let b = 0; b < 7; b++) {
-          // energy per second 4 pi c / V * exp(-13.8 t / RT); per sample divide by sr
+          // energy per second 4 pi c / V * exp(-13.8 t / RT) (integrates to Barron's 16 pi / A); per sample / sr
           const e = 4 * Math.PI * C / E.V * Math.exp(-13.82 * t / E.rt[b]) * sidePow[b] * P.diffuse / sr;
           gains[b] = Math.sqrt(e * ramp);
         }
-        bandCurve(gains, NF, sr, curve);
-        for (let k = 0; k < NF; k++) { re[k] = gauss(rg); im[k] = 0; }
-        for (let k = 0; k < NF; k++) re[k] *= win[k];
-        fft(re, im, false);
-        for (let k = 0; k <= NF / 2; k++) {
-          const g = curve[k]; re[k] *= g; im[k] *= g;
-          if (k > 0 && k < NF / 2) { re[NF - k] *= g; im[NF - k] *= g; }
+        bandCurve(gains, NF, sr, curves[mi]);
+      }
+      for (let k = 0; k < NF; k++) { r1[k] = gauss(rg) * win[k]; i1[k] = 0; r2[k] = gauss(rg) * win[k]; i2[k] = 0; }
+      fft(r1, i1, false); fft(r2, i2, false);
+      for (let mi = 0; mi < nm; mi++) {
+        for (let k = 0; k < NF; k++) {
+          const kb = k <= NF / 2 ? k : NF - k;
+          let a, b2;
+          if (mi === 0) { a = r1[k]; b2 = i1[k]; }
+          else { const g = coh[kb], h = Math.sqrt(1 - g * g); a = g * r1[k] + h * r2[k]; b2 = g * i1[k] + h * i2[k]; }
+          const c = curves[mi][kb]; o1[k] = a * c; q1[k] = b2 * c;
         }
-        fft(re, im, true);
-        const o = fI * hop;
-        for (let i = 0; i < NF; i++) { const k = o + i; if (k < N) buf[k] += re[i] * win[i]; }
+        fft(o1, q1, true);
+        const buf = out[side][mi], o = fI * hop;
+        for (let i = 0; i < NF; i++) { const k = o + i; if (k < N) buf[k] += o1[i] * win[i]; }
       }
     }
   }
@@ -685,14 +711,16 @@ function buildIRs(scene, sr) {
 }
 
 function buildIRsNormalized(scene, sr) {
-  const out = buildIRs(scene, sr), g = micNorm(scene);
-  for (const side of ['front', 'back']) for (const ch of out[side]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
-  // single-mic setups: the room is heard in stereo through a twin of the mic offset 30 cm (decorrelated)
-  if (expandMics(scene.mics).length === 1) {
-    const s2 = Object.assign({}, scene, { mics: { mics: expandMics(scene.mics).map(m => ({ p: [m.p[0] + 0.3, m.p[1], m.p[2]], aim: add(m.p, m.axis), pattern: m.pattern })) } });
-    const tw = buildIRs(s2, sr);
-    for (const side of ['front', 'back']) { out[side][1] = tw[side][0]; for (let i = 0; i < out[side][1].length; i++) out[side][1][i] *= g; }
+  const g = micNorm(scene), mics = expandMics(scene.mics);
+  let sc = scene;
+  // single mic: the room is rendered at the mic and at a twin 30 cm to the side (partially coherent tail), so the
+  // reflections arrive in stereo while the direct sound stays centred
+  if (mics.length === 1) {
+    const m = mics[0];
+    sc = Object.assign({}, scene, { mics: { mics: [{ p: m.p, aim: add(m.p, m.axis), pattern: m.pattern }, { p: [m.p[0] + 0.3, m.p[1], m.p[2]], aim: add([m.p[0] + 0.3, m.p[1], m.p[2]], m.axis), pattern: m.pattern }] } });
   }
+  const out = buildIRs(sc, sr);
+  for (const side of ['front', 'back']) for (const ch of out[side]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
   out.norm = g;
   return out;
 }
@@ -803,28 +831,79 @@ const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 // ---------------- body ----------------
 // ---------------- construction & contact ----------------
-// Multipliers for top- and back-dominated modes: f (frequency), m (effective mass), dq (added loss 1/Q),
-// rad (radiation); finish adds loss rising with frequency; holding adds back/top loss and a small shift.
+// Wood data (12% MC): density kg/m3, E along grain GPa, E across grain GPa, Q along grain, Q across grain.
+// Wikipedia/USDA Wood Handbook moduli; damping from Bremaud et al. 2012, Yoshikawa, Haines (via Richardson),
+// Stephens 2015. Reference build: Sitka spruce top, Indian rosewood back, thin nitro finish, standard X bracing.
 const WOODS = {
   top: {
-    sitka:     { name: 'Sitka spruce', f: 1, m: 1, dq: 0, rad: 1 },
-    adirondack:{ name: 'Adirondack spruce', f: 1.03, m: 1.0, dq: -0.002, rad: 1.05 },
-    engelmann: { name: 'Engelmann spruce', f: 0.97, m: 0.95, dq: 0.001, rad: 1.03 },
-    cedar:     { name: 'Western red cedar', f: 0.96, m: 0.93, dq: 0.004, rad: 1.06 },
-    redwood:   { name: 'Redwood', f: 0.97, m: 0.97, dq: 0.003, rad: 1.02 },
-    mahogany:  { name: 'Mahogany top', f: 0.92, m: 1.25, dq: 0.004, rad: 0.85 },
-    koa:       { name: 'Koa top', f: 0.95, m: 1.35, dq: 0.002, rad: 0.82 }
+    sitka:      { name: 'Sitka spruce', rho: 425, E: 11.0, ER: 0.86, QL: 150, QR: 47 },
+    adirondack: { name: 'Adirondack spruce', rho: 435, E: 10.8, ER: 0.86, QL: 150, QR: 47 },
+    engelmann:  { name: 'Engelmann spruce', rho: 385, E: 9.4, ER: 1.20, QL: 150, QR: 47 },
+    european:   { name: 'European spruce', rho: 405, E: 9.7, ER: 0.70, QL: 119, QR: 40 },
+    cedar:      { name: 'Western red cedar', rho: 370, E: 7.7, ER: 0.62, QL: 139, QR: 45 },
+    redwood:    { name: 'Redwood', rho: 415, E: 8.4, ER: 0.73, QL: 135, QR: 44 },
+    mahogany:   { name: 'Mahogany top', rho: 590, E: 10.1, ER: 1.08, QL: 156, QR: 60 },
+    koa:        { name: 'Koa top', rho: 610, E: 10.4, ER: 1.10, QL: 140, QR: 58 }
   },
   back: {
-    indian:    { name: 'Indian rosewood', f: 1, m: 1, dq: 0, rad: 1 },
-    brazilian: { name: 'Brazilian rosewood', f: 1.02, m: 1.02, dq: -0.003, rad: 1.02 },
-    mahogany:  { name: 'Mahogany', f: 0.95, m: 0.8, dq: 0.004, rad: 0.95 },
-    maple:     { name: 'Maple', f: 1.05, m: 0.9, dq: 0.007, rad: 0.92 },
-    koa:       { name: 'Koa', f: 1.0, m: 0.95, dq: 0.002, rad: 0.97 },
-    walnut:    { name: 'Walnut', f: 0.98, m: 0.88, dq: 0.004, rad: 0.95 },
-    sapele:    { name: 'Sapele', f: 0.98, m: 0.9, dq: 0.004, rad: 0.95 }
+    indian:    { name: 'Indian rosewood', rho: 830, E: 11.5, ER: 2.4, QL: 137, QR: 90 },
+    brazilian: { name: 'Brazilian rosewood', rho: 835, E: 13.9, ER: 2.8, QL: 170, QR: 100 },
+    mahogany:  { name: 'Mahogany', rho: 590, E: 10.1, ER: 1.08, QL: 156, QR: 60 },
+    sapele:    { name: 'Sapele', rho: 670, E: 12.0, ER: 1.25, QL: 120, QR: 55 },
+    maple:     { name: 'Maple', rho: 705, E: 12.6, ER: 1.66, QL: 75, QR: 40 },
+    koa:       { name: 'Koa', rho: 610, E: 10.4, ER: 1.10, QL: 140, QR: 58 },
+    walnut:    { name: 'Walnut', rho: 610, E: 11.6, ER: 1.23, QL: 125, QR: 55 },
+    cocobolo:  { name: 'Cocobolo', rho: 1095, E: 18.7, ER: 3.0, QL: 116, QR: 80 }
   }
 };
+// How a wood changes a plate depends on how it is thicknessed: a luthier thins each top to the same stiffness
+// (h ~ E^-1/3, so mass ~ rho E^-1/3 changes, frequency barely), a factory keeps thickness (stiffness ~ E, mass ~ rho).
+// In a steel-string top roughly half the low-mode stiffness is in the braces; the plate is ~3/4 of the moving mass.
+function plateFactors(w, ref, style) {
+  const re = w.E / ref.E, rr = w.rho / ref.rho, rER = w.ER / ref.ER;
+  const h = style === 'factory' ? 1 : Math.pow(re, -1 / 3);
+  const Kp = re * h * h * h, Mp = rr * h, KR = rER * h * h * h;
+  return {
+    low: { K: 0.5 + 0.5 * Kp, M: 0.25 + 0.75 * Mp },
+    hf: { K: (0.35 + 0.65 * Kp) * Math.pow(KR / Math.max(1e-3, Kp), 0.22), M: 0.15 + 0.85 * Mp },
+    lossL: 1 / w.QL - 1 / ref.QL, lossR: 1 / w.QR - 1 / ref.QR
+  };
+}
+function constructionFactors(b) {
+  const style = b.style === 'factory' ? 'factory' : 'luthier';
+  const tw = WOODS.top[b.top] || WOODS.top.sitka, bw = WOODS.back[b.back] || WOODS.back.indian;
+  const T = plateFactors(tw, WOODS.top.sitka, style);
+  const Bk = plateFactors(bw, WOODS.back.indian, style);
+  if (style === 'luthier') {
+    // Carcagno et al. 2018: with the back thicknessed to compensate, back modes moved by only a few percent
+    const cr = Math.sqrt(bw.E / bw.rho) / Math.sqrt(WOODS.back.indian.E / WOODS.back.indian.rho);
+    const fb = 1 + Math.max(-0.02, Math.min(0.02, (cr - 1) * 0.5));
+    Bk.low = { K: fb * fb, M: 1 }; Bk.hf = { K: fb * fb, M: 1 };
+  }
+  const hold = HOLDS[b.hold] || HOLDS.seated;
+  // finish (Stephens 2015, thin nitro on Sitka): mass +7%, Q -7% low modes, -30% cross-grain modes;
+  // values below are relative to the reference thin nitro. Thick poly ~2x the film: about twice the effect.
+  const fin = b.finish === 'poly' ? { M: 1.07, qLow: 0.92, qHf: 0.7 } : b.finish === 'none' ? { M: 0.935, qLow: 1.07, qHf: 1.35 } : { M: 1, qLow: 1, qHf: 1 };
+  // bracing (no published measurements; luthier lore, kept small): scalloping lowers stiffness of the low modes
+  const br = b.bracing === 'scalloped' ? { K: 0.9, M: 0.98 } : b.bracing === 'forward' ? { K: 0.94, M: 1 } : { K: 1, M: 1 };
+  return {
+    hold,
+    // multipliers for one mode, given its back share p, a 0..1 "high frequency / cross-grain" weight, and low/stat
+    mode(p, hf, isLow) {
+      const tL = isLow ? T.low : { K: T.low.K * (1 - hf) + T.hf.K * hf, M: T.low.M * (1 - hf) + T.hf.M * hf };
+      const bL = isLow ? Bk.low : { K: Bk.low.K * (1 - hf) + Bk.hf.K * hf, M: Bk.low.M * (1 - hf) + Bk.hf.M * hf };
+      const topK = tL.K * (isLow || hf < 0.5 ? br.K : 1), topM = tL.M * fin.M * br.M;
+      const K = Math.pow(topK, 1 - p) * Math.pow(bL.K, p), M = Math.pow(topM, 1 - p) * Math.pow(bL.M, p);
+      // wood loss is ~20-30% of a mode's total loss: add the change in the wood's own loss (along grain for low
+      // modes, across grain as frequency rises)
+      const dTop = T.lossL * (1 - hf) + T.lossR * hf, dBack = Bk.lossL * (1 - hf) + Bk.lossR * hf;
+      const dq = (1 - p) * dTop * 0.3 + p * dBack * 0.3;
+      const qFin = (1 - p) * (fin.qLow * (1 - hf) + fin.qHf * hf) + p;
+      return { f: Math.sqrt(K / M), m: M, dq, qMul: qFin, rad: Math.pow(1 / M, isLow ? 1 : 0.5) };
+    }
+  };
+}
+
 // Player contact (Le Carrou, Pate & Chomette 2019: damping always rises, frequencies move < 2-5%; Woodhouse 2004:
 // low-mode damping depends strongly on how the guitar is held, little above ~300 Hz). Back-dominated modes take the
 // most: torso against the back roughly halves their Q; A0 and T(1,1) gain ~20-30% damping.
@@ -833,13 +912,6 @@ const HOLDS = {
   seated: { name: 'Held, seated', back: 0.03, top: 0.002, fshift: -0.012 },
   firm:   { name: 'Hugged close', back: 0.05, top: 0.004, fshift: -0.02 }
 };
-function constructionFactors(b) {
-  const top = WOODS.top[b.top] || WOODS.top.sitka, back = WOODS.back[b.back] || WOODS.back.indian;
-  const hold = HOLDS[b.hold] || HOLDS.seated;
-  const finishDq = b.finish === 'poly' ? 0.004 : b.finish === 'none' ? -0.002 : 0;
-  const lowF = b.bracing === 'scalloped' ? 0.96 : b.bracing === 'forward' ? 0.97 : 1;
-  return { top, back, hold, finishDq, lowF };
-}
 
 // Region patterns of the low modes over [hole, bridge, bass, treble, tail, upper, back] (volume-velocity shares)
 const REGION_PATTERNS = {
@@ -885,14 +957,14 @@ class Body {
     // construction (woods, bracing, finish) and the player's contact reshape every mode by its top/back share
     for (let i = 0; i < n; i++) {
       const p = pb[i], hf = Math.min(1, Math.max(0, (f[i] - 400) / 3000));
-      f[i] *= Math.pow(K.top.f, 1 - p) * Math.pow(K.back.f, p) * (i < nLow ? K.lowF : 1);
-      m[i] *= Math.pow(K.top.m, 1 - p) * Math.pow(K.back.m, p);
-      // loss factors add: 1/Q = 1/Q0 + extra losses from wood, finish and contact
-      let invQ = 1 / Q[i] + (1 - p) * K.top.dq + p * K.back.dq + K.finishDq * (0.5 + hf)
-        + (K.hold.back * p + K.hold.top * (1 - p)) * (i < nLow ? 1 : 1 - 0.5 * hf);
+      const F = K.mode(p, hf, i < nLow);
+      f[i] *= F.f;
+      m[i] *= F.m;
+      // loss factors add: 1/Q = 1/Q0 (scaled by finish) + change in wood loss + the player's contact
+      let invQ = 1 / (Q[i] * F.qMul) + F.dq + (K.hold.back * p + K.hold.top * (1 - p)) * (i < nLow ? 1 : 1 - 0.5 * hf);
       Q[i] = 1 / Math.max(1 / 400, invQ);
       f[i] *= 1 + K.hold.fshift * p;
-      rad[i] *= Math.pow(K.top.rad, 1 - p) * Math.pow(K.back.rad, p);
+      rad[i] *= F.rad;
     }
     this.n = n; this.nLow = nLow;
     this.f = Float64Array.from(f); this.Q = Float64Array.from(Q); this.m = Float64Array.from(m);
@@ -1001,7 +1073,7 @@ class GuitarEngine {
     this.params = {
       preset: 'dreadnought', tuning: STD.slice(), capo: 0, brightness: 0.55, body: 1.0, bodySize: 1.0,
       sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high',
-      build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated' },
+      build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated', style: 'luthier' },
       scene: { mics: 'fret12', hold: 'seated' }
     };
     this.bend = 0; this.bendTarget = 0;
@@ -2195,12 +2267,12 @@ async function start() {
   const load = benchmark();
   quality = load > 0.3 ? 'eco' : 'high';
   ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
-  master = ctx.createGain(); master.gain.value = 1;
+  master = ctx.createGain(); master.gain.value = 0.7;
   dryGain = ctx.createGain(); wetGain = ctx.createGain();
   // the room: one convolver per source side (top / back), impulse responses from the image-source model
   convF = ctx.createConvolver(); convB = ctx.createConvolver(); convF.normalize = false; convB.normalize = false;
   const limiter = ctx.createDynamicsCompressor();
-  limiter.threshold.value = -4; limiter.knee.value = 4; limiter.ratio.value = 12; limiter.attack.value = 0.001; limiter.release.value = 0.12;
+  limiter.threshold.value = -6; limiter.knee.value = 4; limiter.ratio.value = 14; limiter.attack.value = 0.001; limiter.release.value = 0.12;
   let src;
   try {
     const code = document.getElementById('dsp-src').textContent;
@@ -2247,7 +2319,7 @@ const scene = {
 };
 const build = {
   top: store.get('b.top', 'sitka'), back: store.get('b.back', 'indian'), bracing: store.get('b.bracing', 'standard'),
-  finish: store.get('b.finish', 'nitro'), hold: store.get('b.hold', 'seated')
+  finish: store.get('b.finish', 'nitro'), hold: store.get('b.hold', 'seated'), style: store.get('b.style', 'luthier')
 };
 function sceneObject() {
   const S = SP(), room = S.ROOMS[scene.room];
@@ -2446,17 +2518,17 @@ function bindSpace() {
   fillSelect('hold', Object.entries(GUITAR_HOLDS).map(([k, v]) => [k, v.name]), build.hold);
   fillSelect('micSetup', Object.entries(S.MIC_SETUPS).map(([k, v]) => [k, v.name]), scene.mics);
   fillSelect('roomSel', Object.entries(S.ROOMS).map(([k, v]) => [k, v.name]), scene.room);
-  $('bracing').value = build.bracing; $('finish').value = build.finish; $('micPattern').value = scene.pattern;
+  $('bracing').value = build.bracing; $('finish').value = build.finish; $('buildStyle').value = build.style; $('micPattern').value = scene.pattern;
   $('micDist').value = Math.round(scene.dist * 100); $('micDistOut').textContent = 'x' + scene.dist.toFixed(1);
-  $('roomTrim').value = scene.trim; $('roomTrimOut').textContent = scene.trim ? (scene.trim > 0 ? '+' : '') + scene.trim + ' dB' : 'as heard';
+  $('roomTrim').value = scene.trim; $('roomTrimOut').textContent = (scene.trim > 0 ? '+' : '') + scene.trim + ' dB';
   const onBuild = (id, key) => $(id).addEventListener('change', () => { build[key] = $(id).value; store.set('b.' + key, build[key]); applyScene(); });
-  onBuild('topWood', 'top'); onBuild('backWood', 'back'); onBuild('bracing', 'bracing'); onBuild('finish', 'finish'); onBuild('hold', 'hold');
+  onBuild('topWood', 'top'); onBuild('backWood', 'back'); onBuild('buildStyle', 'style'); onBuild('bracing', 'bracing'); onBuild('finish', 'finish'); onBuild('hold', 'hold');
   const onScene = (id, key) => $(id).addEventListener('change', () => { scene[key] = $(id).value; store.set('sp.' + key, scene[key]); applyScene(); });
   onScene('micSetup', 'mics'); onScene('micPattern', 'pattern'); onScene('roomSel', 'room');
   $('micDist').addEventListener('input', () => { scene.dist = +$('micDist').value / 100; $('micDistOut').textContent = 'x' + scene.dist.toFixed(1); store.set('sp.dist', scene.dist); applyScene(); });
   $('roomTrim').addEventListener('input', () => {
     scene.trim = +$('roomTrim').value; store.set('sp.trim', scene.trim);
-    $('roomTrimOut').textContent = scene.trim ? (scene.trim > 0 ? '+' : '') + scene.trim + ' dB' : 'as heard';
+    $('roomTrimOut').textContent = (scene.trim > 0 ? '+' : '') + scene.trim + ' dB';
     if (wetGain) wetGain.gain.value = Math.pow(10, scene.trim / 20) * 2.0;
   });
   $('turnGuitar').addEventListener('click', () => { scene.yaw = (scene.yaw + Math.PI / 4) % (2 * Math.PI); store.set('sp.yaw', scene.yaw); applyScene(); });

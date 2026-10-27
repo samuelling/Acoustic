@@ -22,37 +22,42 @@ const MATERIALS = {
   stone:      { name: 'Stone', a: [0.02, 0.02, 0.03, 0.04, 0.05, 0.05, 0.06] },
   plaster:    { name: 'Plaster / drywall', a: [0.29, 0.10, 0.05, 0.04, 0.07, 0.09, 0.10] },
   woodFloor:  { name: 'Wood floor', a: [0.15, 0.11, 0.10, 0.07, 0.06, 0.07, 0.07] },
-  woodPanel:  { name: 'Wood paneling', a: [0.42, 0.21, 0.10, 0.08, 0.06, 0.06, 0.06] },
+  woodPanel:  { name: 'Wood paneling', a: [0.30, 0.25, 0.20, 0.17, 0.15, 0.10, 0.09] },
+  plasterHard:{ name: 'Plaster on masonry', a: [0.013, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06] },
+  pews:       { name: 'Wooden pews', a: [0.10, 0.12, 0.14, 0.16, 0.17, 0.17, 0.17] },
   carpet:     { name: 'Carpet on concrete', a: [0.02, 0.06, 0.14, 0.37, 0.60, 0.65, 0.66] },
   carpetPad:  { name: 'Carpet on pad', a: [0.08, 0.24, 0.57, 0.69, 0.71, 0.73, 0.74] },
   curtain:    { name: 'Heavy curtains', a: [0.14, 0.35, 0.55, 0.72, 0.70, 0.65, 0.62] },
   glass:      { name: 'Window glass', a: [0.35, 0.25, 0.18, 0.12, 0.07, 0.04, 0.03] },
   tile:       { name: 'Ceramic tile', a: [0.01, 0.01, 0.01, 0.02, 0.02, 0.02, 0.03] },
-  foam:       { name: 'Acoustic panels', a: [0.25, 0.65, 0.95, 1.00, 0.95, 0.90, 0.88] },
-  sofa:       { name: 'Upholstered furniture', a: [0.35, 0.45, 0.57, 0.61, 0.59, 0.55, 0.52] },
+  foam:       { name: 'Acoustic foam', a: [0.08, 0.25, 0.60, 0.90, 0.95, 0.98, 0.98] },
+  wool:       { name: 'Mineral wool panels', a: [0.45, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0] },
+  sofa:       { name: 'Upholstered furniture', a: [0.70, 0.76, 0.81, 0.84, 0.84, 0.81, 0.78] },
   audience:   { name: 'Seated audience', a: [0.60, 0.74, 0.88, 0.96, 0.93, 0.85, 0.80] },
-  books:      { name: 'Bookshelves', a: [0.30, 0.35, 0.40, 0.45, 0.50, 0.50, 0.50] },
-  grass:      { name: 'Grass', a: [0.11, 0.26, 0.60, 0.69, 0.92, 0.99, 0.99] },
+  books:      { name: 'Bookshelves', a: [0.30, 0.40, 0.40, 0.30, 0.30, 0.30, 0.30] },
+  grass:      { name: 'Grass', a: [0.10, 0.25, 0.45, 0.60, 0.70, 0.75, 0.78] },
   open:       { name: 'Open air', a: [1, 1, 1, 1, 1, 1, 1] }
 };
 // air absorption, energy attenuation coefficient m (1/m) at 20 C, 50% RH (ISO 9613-1)
-const AIR_M = [0.0001, 0.0003, 0.0006, 0.0011, 0.0024, 0.0072, 0.0245];
+const AIR_M = [0.0001, 0.0003, 0.00063, 0.00107, 0.00227, 0.0065, 0.020]; // effective full-octave (Wenmaekers 2014)
 
 // surfaces: floor, ceiling, x0 (left), x1 (right), y0 (front, behind the mics), y1 (back, behind the player)
 const ROOMS = {
-  booth:    { name: 'Dead booth', dims: [2.4, 2.0, 2.4], walls: { floor: 'carpetPad', ceiling: 'foam', x0: 'foam', x1: 'foam', y0: 'foam', y1: 'foam' }, extra: [], scatter: 0.4 },
+  booth:    { name: 'Vocal booth', dims: [2.0, 1.6, 2.3], walls: { floor: 'carpet', ceiling: 'plaster', x0: 'foam', x1: 'woodPanel', y0: 'foam', y1: 'woodPanel' }, extra: [], scatter: 0.4 },
   living:   { name: 'Living room', dims: [5.6, 4.4, 2.6], walls: { floor: 'woodFloor', ceiling: 'plaster', x0: 'plaster', x1: 'glass', y0: 'plaster', y1: 'books' },
-              extra: [{ mat: 'carpet', area: 6, on: 'floor' }, { mat: 'sofa', area: 5, on: 'floor' }, { mat: 'curtain', area: 5, on: 'x1' }], scatter: 0.35 },
+              extra: [{ mat: 'carpet', area: 6, on: 'floor' }, { mat: 'sofa', area: 3, on: 'floor' }, { mat: 'curtain', area: 5, on: 'x1' }], scatter: 0.35 },
   bedroom:  { name: 'Bedroom', dims: [4.0, 3.6, 2.5], walls: { floor: 'carpetPad', ceiling: 'plaster', x0: 'plaster', x1: 'plaster', y0: 'plaster', y1: 'glass' },
-              extra: [{ mat: 'sofa', area: 5, on: 'floor' }, { mat: 'curtain', area: 3, on: 'y1' }], scatter: 0.35 },
-  bathroom: { name: 'Tiled bathroom', dims: [2.6, 2.2, 2.4], walls: { floor: 'tile', ceiling: 'plaster', x0: 'tile', x1: 'tile', y0: 'tile', y1: 'glass' }, extra: [], scatter: 0.15 },
-  studio:   { name: 'Studio live room', dims: [8.0, 6.0, 3.4], walls: { floor: 'woodFloor', ceiling: 'foam', x0: 'woodPanel', x1: 'woodPanel', y0: 'curtain', y1: 'woodPanel' }, extra: [], scatter: 0.5 },
-  recital:  { name: 'Wooden recital hall', dims: [22, 14, 8], walls: { floor: 'woodFloor', ceiling: 'woodPanel', x0: 'woodPanel', x1: 'woodPanel', y0: 'plaster', y1: 'woodPanel' },
-              extra: [{ mat: 'audience', area: 90, on: 'floor' }], scatter: 0.5 },
-  hall:     { name: 'Concert hall', dims: [38, 23, 18], walls: { floor: 'woodFloor', ceiling: 'plaster', x0: 'plaster', x1: 'plaster', y0: 'woodPanel', y1: 'plaster' },
-              extra: [{ mat: 'audience', area: 560, on: 'floor' }], scatter: 0.6 },
+              extra: [{ mat: 'sofa', area: 3.5, on: 'floor' }, { mat: 'curtain', area: 3, on: 'y1' }], scatter: 0.35 },
+  bathroom: { name: 'Tiled bathroom', dims: [2.6, 2.2, 2.4], walls: { floor: 'tile', ceiling: 'plaster', x0: 'tile', x1: 'tile', y0: 'tile', y1: 'glass' },
+              extra: [{ mat: 'curtain', area: 1.2, on: 'x1' }], scatter: 0.15 },
+  studio:   { name: 'Studio live room', dims: [8.0, 6.0, 3.4], walls: { floor: 'woodFloor', ceiling: 'woodPanel', x0: 'woodPanel', x1: 'plaster', y0: 'curtain', y1: 'woodPanel' },
+              extra: [{ mat: 'wool', area: 4, on: 'ceiling' }], scatter: 0.5 },
+  recital:  { name: 'Wooden recital hall', dims: [24, 15, 9], walls: { floor: 'woodFloor', ceiling: 'plasterHard', x0: 'woodPanel', x1: 'woodPanel', y0: 'plasterHard', y1: 'woodPanel' },
+              extra: [{ mat: 'audience', area: 230, on: 'floor' }], scatter: 0.5 },
+  hall:     { name: 'Concert hall (Boston-like)', dims: [38, 23, 18.6], walls: { floor: 'woodFloor', ceiling: 'plasterHard', x0: 'plasterHard', x1: 'plasterHard', y0: 'woodPanel', y1: 'plasterHard' },
+              extra: [{ mat: 'audience', area: 760, on: 'floor' }, { mat: 'audience', area: 160, on: 'x0' }, { mat: 'audience', area: 160, on: 'x1' }], scatter: 0.6 },
   church:   { name: 'Stone church', dims: [42, 16, 18], walls: { floor: 'stone', ceiling: 'stone', x0: 'stone', x1: 'glass', y0: 'stone', y1: 'stone' },
-              extra: [{ mat: 'woodPanel', area: 120, on: 'floor' }], scatter: 0.45 },
+              extra: [{ mat: 'pews', area: 500, on: 'floor' }, { mat: 'audience', area: 110, on: 'floor' }, { mat: 'woodPanel', area: 150, on: 'y1' }], scatter: 0.45 },
   outdoors: { name: 'Outdoors on grass', dims: [200, 200, 200], walls: { floor: 'grass', ceiling: 'open', x0: 'open', x1: 'open', y0: 'open', y1: 'open' }, extra: [], scatter: 0.2, open: true }
 };
 
@@ -333,7 +338,7 @@ function buildIRs(scene, sr) {
         if (order > maxOrder) continue;
         const I = [(1 - 2 * px) * S[0] + 2 * nx * Lx, (1 - 2 * py) * S[1] + 2 * ny * Ly, (1 - 2 * pz) * S[2] + 2 * nz * Lz];
         // randomize higher-order images slightly (diffusion; avoids flutter from a perfect lattice)
-        if (order > 1) for (let a = 0; a < 3; a++) I[a] += (r() - 0.5) * 0.12 * Math.min(1, order / 4);
+        if (order > 1) for (let a = 0; a < 3; a++) I[a] += (r() - 0.5) * 0.16 * Math.min(1, order / 4); // randomized image method, <= 8 cm
         const v = sub(M.room, I), d = len(v), t = d / C;
         if (t > tMix) continue;
         const arrive = scl(v, -1 / d);                       // from mic toward the image
@@ -366,39 +371,54 @@ function buildIRs(scene, sr) {
   const win = new Float64Array(NF); for (let i = 0; i < NF; i++) win[i] = Math.sin(Math.PI * (i + 0.5) / NF); // sqrt-hann pair
   const nFrames = Math.ceil(N / hop);
   const meanFree = 4 * E.V / E.S;
+  // inter-mic coherence of the diffuse tail: sin(kd)/(kd) for spaced omnis (spacing d); coincident directional pairs
+  // keep partial coherence from their overlapping patterns
+  const m0 = mics[0], m1 = mics[1] || mics[0];
+  const spacing = mics.length > 1 ? len(sub(m0.p, m1.p)) : 0.3;
+  const coincident = spacing < 0.05;
+  const coh = new Float64Array(NF / 2 + 1);
+  for (let k = 0; k <= NF / 2; k++) {
+    const f = Math.max(1, k * sr / NF), kd = 2 * Math.PI * f / C * (m0.ear ? 0.22 : spacing);
+    coh[k] = coincident ? 0.55 : Math.max(0, Math.sin(kd) / kd);
+  }
   for (const side of ['front', 'back']) {
     // fraction of the source's power going into this side's directions (diffuse-field weighting)
     const sidePow = []; for (let b = 0; b < 7; b++) {
-      let s = 0, n = 0;
-      for (let k = 0; k < 64; k++) { const z = -1 + (k + 0.5) / 32; s += Math.pow(sourceGain(side, [0, 0, z], b, held), 2); n++; }
-      sidePow.push(s / n);
+      let sp = 0, n = 0;
+      for (let k = 0; k < 64; k++) { const z = -1 + (k + 0.5) / 32; sp += Math.pow(sourceGain(side, [0, 0, z], b, held), 2); n++; }
+      sidePow.push(sp / n);
     }
-    for (let mi = 0; mi < Math.min(2, mics.length); mi++) {
-      const M = mics[mi], buf = out[side][mi];
-      const P = M.ear ? { diffuse: 0.9 } : (PATTERNS[M.pattern] || PATTERNS.omni);
-      const rg = rng32(777 + mi * 31 + (side === 'back' ? 999 : 0));
-      const curve = new Float64Array(NF / 2 + 1), gains = new Array(7);
-      const re = new Float64Array(NF), im = new Float64Array(NF);
-      for (let fI = 0; fI < nFrames; fI++) {
-        const t = (fI * hop + NF / 2) / sr;
-        const nRef = C * t / meanFree;
-        const ramp = t >= tMix ? 1 : Math.max(0, 1 - Math.pow(1 - scat, nRef)) * 0.9 + 0.1 * Math.min(1, t / tMix) ** 2;
+    const nm = Math.min(2, mics.length);
+    const rg = rng32(777 + (side === 'back' ? 999 : 0));
+    const curves = [new Float64Array(NF / 2 + 1), new Float64Array(NF / 2 + 1)], gains = new Array(7);
+    const r1 = new Float64Array(NF), i1 = new Float64Array(NF), r2 = new Float64Array(NF), i2 = new Float64Array(NF);
+    const o1 = new Float64Array(NF), q1 = new Float64Array(NF);
+    for (let fI = 0; fI < nFrames; fI++) {
+      const t = (fI * hop + NF / 2) / sr;
+      const nRef = C * t / meanFree;
+      const ramp = t >= tMix ? 1 : Math.max(0, 1 - Math.pow(1 - scat, nRef)) * 0.9 + 0.1 * Math.min(1, t / tMix) ** 2;
+      for (let mi = 0; mi < nm; mi++) {
+        const P = mics[mi].ear ? { diffuse: 0.9 } : (PATTERNS[mics[mi].pattern] || PATTERNS.omni);
         for (let b = 0; b < 7; b++) {
-          // energy per second 4 pi c / V * exp(-13.8 t / RT); per sample divide by sr
+          // energy per second 4 pi c / V * exp(-13.8 t / RT) (integrates to Barron's 16 pi / A); per sample / sr
           const e = 4 * Math.PI * C / E.V * Math.exp(-13.82 * t / E.rt[b]) * sidePow[b] * P.diffuse / sr;
           gains[b] = Math.sqrt(e * ramp);
         }
-        bandCurve(gains, NF, sr, curve);
-        for (let k = 0; k < NF; k++) { re[k] = gauss(rg); im[k] = 0; }
-        for (let k = 0; k < NF; k++) re[k] *= win[k];
-        fft(re, im, false);
-        for (let k = 0; k <= NF / 2; k++) {
-          const g = curve[k]; re[k] *= g; im[k] *= g;
-          if (k > 0 && k < NF / 2) { re[NF - k] *= g; im[NF - k] *= g; }
+        bandCurve(gains, NF, sr, curves[mi]);
+      }
+      for (let k = 0; k < NF; k++) { r1[k] = gauss(rg) * win[k]; i1[k] = 0; r2[k] = gauss(rg) * win[k]; i2[k] = 0; }
+      fft(r1, i1, false); fft(r2, i2, false);
+      for (let mi = 0; mi < nm; mi++) {
+        for (let k = 0; k < NF; k++) {
+          const kb = k <= NF / 2 ? k : NF - k;
+          let a, b2;
+          if (mi === 0) { a = r1[k]; b2 = i1[k]; }
+          else { const g = coh[kb], h = Math.sqrt(1 - g * g); a = g * r1[k] + h * r2[k]; b2 = g * i1[k] + h * i2[k]; }
+          const c = curves[mi][kb]; o1[k] = a * c; q1[k] = b2 * c;
         }
-        fft(re, im, true);
-        const o = fI * hop;
-        for (let i = 0; i < NF; i++) { const k = o + i; if (k < N) buf[k] += re[i] * win[i]; }
+        fft(o1, q1, true);
+        const buf = out[side][mi], o = fI * hop;
+        for (let i = 0; i < NF; i++) { const k = o + i; if (k < N) buf[k] += o1[i] * win[i]; }
       }
     }
   }
@@ -406,14 +426,16 @@ function buildIRs(scene, sr) {
 }
 
 function buildIRsNormalized(scene, sr) {
-  const out = buildIRs(scene, sr), g = micNorm(scene);
-  for (const side of ['front', 'back']) for (const ch of out[side]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
-  // single-mic setups: the room is heard in stereo through a twin of the mic offset 30 cm (decorrelated)
-  if (expandMics(scene.mics).length === 1) {
-    const s2 = Object.assign({}, scene, { mics: { mics: expandMics(scene.mics).map(m => ({ p: [m.p[0] + 0.3, m.p[1], m.p[2]], aim: add(m.p, m.axis), pattern: m.pattern })) } });
-    const tw = buildIRs(s2, sr);
-    for (const side of ['front', 'back']) { out[side][1] = tw[side][0]; for (let i = 0; i < out[side][1].length; i++) out[side][1][i] *= g; }
+  const g = micNorm(scene), mics = expandMics(scene.mics);
+  let sc = scene;
+  // single mic: the room is rendered at the mic and at a twin 30 cm to the side (partially coherent tail), so the
+  // reflections arrive in stereo while the direct sound stays centred
+  if (mics.length === 1) {
+    const m = mics[0];
+    sc = Object.assign({}, scene, { mics: { mics: [{ p: m.p, aim: add(m.p, m.axis), pattern: m.pattern }, { p: [m.p[0] + 0.3, m.p[1], m.p[2]], aim: add([m.p[0] + 0.3, m.p[1], m.p[2]], m.axis), pattern: m.pattern }] } });
   }
+  const out = buildIRs(sc, sr);
+  for (const side of ['front', 'back']) for (const ch of out[side]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
   out.norm = g;
   return out;
 }

@@ -26,7 +26,20 @@ A coupled string–body modal model. Nothing about any harmonic's decay or pitch
 Cost: about 10–17% of one desktop core for two overlapping full strums; an automatic "eco" quality (fewer high partials and radiation modes) is chosen on slow devices.
 The previous digital-waveguide engine is kept as `test/legacy_waveguide.js` for A/B tests.
 
-### 2. The hand (`src/strum.js`)
+### 2. The space around it (`src/space.js` + the body section of `src/modal.js`)
+
+**Wood and construction.** Each species enters as measured density, stiffness along and across the grain, and internal damping (USDA Wood Handbook; Brémaud et al. 2012; Haines; Stephens 2015 for finish). How that changes the sound depends on the build style:
+- *Luthier*: plates thinned to equal stiffness (h ∝ E^−1/3), so mass ∝ ρE^−1/3 changes and frequency barely moves; backs compensated (Carcagno et al. 2018 found back-wood choice moved modes only a few percent).
+- *Factory*: fixed thickness, so stiffness ∝ E and mass ∝ ρ both change.
+Braces carry about half the low-mode stiffness. Each body mode is shifted by its share of top versus back motion, with wood loss contributing about a quarter of a mode's damping. Finish adds mass and cross-grain damping (thin nitro vs thick poly). Expected effect sizes are small, as blind tests found: a few percent in frequency, 1–3 dB in level.
+
+**Holding.** Torso contact roughly halves the Q of back-dominated modes, adds about 20–30% damping to A0 and T(1,1), lowers back modes about 1%, and absorbs the back's radiation (Le Carrou, Paté & Chomette 2019; Woodhouse 2004).
+
+**Radiation and microphones.** Seven radiating regions: soundhole, bridge, lower bout bass and treble halves, below the bridge, upper bout, back. Each low mode has its own pattern over them (A0 through the soundhole; dipoles with halves in opposite phase); high modes each live in one region. Each mic hears every region at its own distance (delay and 1/r), through its polar pattern A + B·cosθ, with the near-field gradient term B·cosθ·(c/(jωr)) that produces the proximity effect, and with a diffraction lowpass for regions facing away (the body, or the player's head for the ears view). Setups: soundhole 15 cm, 12th fret 20 cm, lower bout, spaced pair, XY 40 cm, room pair at 2 m, and the player's own ears. Preamp gain is normalized per setup.
+
+**Rooms.** An image-source model (Allen & Berkley) with randomized higher-order images traces reflections up to the mixing time. Each reflection is attenuated per octave by each wall's absorption (and scattering), per ray by the direction it left the guitar (the top beams forward as frequency rises, the back radiates backward, the player absorbs) and by the mic's pattern in the arrival direction, and by air absorption (ISO 9613-1). A late tail follows with per-octave Eyring decay at energy rate 4πc/V (which integrates to Barron's 16π/A), so the direct-to-reverberant balance follows distance on its own. Tails at the two mics are coherent according to their spacing, following sin(kd)/kd. The result is two stereo impulse responses (for the top side and the back side) rendered in a worker and played through native convolvers. Room presets are calibrated to measured reverb times: booth 0.11 s, living room 0.56 s, bedroom 0.35 s, tiled bath 0.92 s, studio 0.53 s, recital hall 1.36 s, Boston-like hall 1.79 s, stone church 5.2 s, plus outdoors over grass.
+
+### 3. The hand (`src/strum.js`)
 
 - **Gather**: notes within a short window (default 18 ms) form one chord.
 - **Voice**: a fingering search places them on the neck — span, barre feasibility (a barre can't cover an open string), open strings, string order, interior mutes, voice leading from the previous position.
@@ -74,4 +87,8 @@ The analyzer reports per-partial starting level and T60, inharmonicity, spectral
 - Christensen & Vistisen (1980), simple model for low-frequency guitar function, JASA.
 - Freire, Armondes, Viana & Silva (2018), strumming microtiming on acoustic guitar, SMC.
 - Pakarinen, Penttinen & Bank (2007), handling noises on wound strings, JASA-EL.
+- Carcagno, Bucknall, Woodhouse, Fritz & Plack (2018), effect of back wood choice on steel-string guitars, JASA.
+- Brémaud et al. (2012), vibrational properties of 98 woods; Stephens (2015), finish effects, Savart Journal; Hess (2013), Savart Journal.
+- Le Carrou, Paté & Chomette (2019), influence of the player on guitar dynamics, JASA.
+- Allen & Berkley (1979), image method; De Sena et al. (2015), randomized image method; Barron & Lee (1988), energy relations; Wenmaekers et al. (2014), air absorption.
 - Hodgkinson, Timoney & Lazzarini (2010), tension-modulated steel-string partial tracks, DAFx.
