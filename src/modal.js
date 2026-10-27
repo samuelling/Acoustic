@@ -104,6 +104,7 @@ const PICKS = {
   nylon46:  { name: 'Nylon .46 (thin)',            E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 0.46e-3, w: 7e-3, edge: 0.15e-3, scrape: 1.0 },
   cell71:   { name: 'Celluloid .71 (medium)',      E: 2.0e9, rho: 1350, eta: 0.030, mu: 0.35, t: 0.71e-3, w: 8e-3, edge: 0.15e-3, scrape: 1.0 },
   delrin100:{ name: 'Delrin 1.0 (Tortex-style)',   E: 2.9e9, rho: 1410, eta: 0.012, mu: 0.20, t: 1.00e-3, w: 8e-3, edge: 0.15e-3, scrape: 0.7 },
+  delrin150:{ name: 'Delrin 1.5, bevelled',        E: 2.9e9, rho: 1410, eta: 0.012, mu: 0.20, t: 1.50e-3, w: 8e-3, edge: 0.30e-3, scrape: 0.6 },
   ultem150: { name: 'Ultem 1.5 (heavy)',           E: 3.3e9, rho: 1270, eta: 0.006, mu: 0.28, t: 1.50e-3, w: 8e-3, edge: 0.18e-3, scrape: 0.8 },
   jazz3:    { name: 'Nylon 1.38, small sharp tip', E: 2.4e9, rho: 1140, eta: 0.035, mu: 0.32, t: 1.38e-3, w: 5e-3, edge: 0.18e-3, scrape: 1.0, ell: 0.75 },
   bone300:  { name: 'Bone 3 mm, bevelled',         E: 15e9,  rho: 1900, eta: 0.010, mu: 0.25, t: 3.00e-3, w: 9e-3, edge: 0.50e-3, scrape: 0.6 },
@@ -624,7 +625,7 @@ class GuitarEngine {
   updateCoefs(v, force) {
     if (!force && Math.abs(v.detune - v.appliedDetune) < 2e-6 && Math.abs(v.extra - v.appliedExtra) < 0.05) return;
     const sr = this.sr, bendR = this.bend === 0 ? 1 : Math.pow(2, this.bend / 12);
-    const sh = (v.shift || 0) + (v.vibShift || 0);
+    const sh = (v.shift || 0) + (v.vibShift || 0) + (v.bendShift || 0);
     const dt = (1 + v.detune) * bendR * (sh ? Math.pow(2, sh / 12) : 1);   // shift: frets slid through; vibShift: finger vibrato
     const ex = v.extra;
     for (let c = 0; c < v.n; c++) {
@@ -675,6 +676,8 @@ class GuitarEngine {
       case 'touch': this.touchString(ev); break;
       case 'untouch': { const st = this.strings[ev.s]; if (st && st.touchId === ev.id) for (const v of st.voices) { v.extraTarget = 0; v.extraRate = 0.25; } break; }
       case 'tap': this.tap(ev); break;
+      // a string bend by the fretting finger: rises by `amount` semitones over `rise` s (smooth), held, optionally released
+      case 'sbend': { const st = this.strings[ev.s]; if (st) st.sbend = { at: this.clock + Math.round((ev.delay || 0) * this.sr), amount: ev.amount ?? 2, rise: ev.rise || 0.12, release: ev.release }; break; }
       case 'vibrato': { const st = this.strings[ev.s]; if (st) st.vib = { at: this.clock + Math.round((ev.delay || 0) * this.sr), rate: ev.rate || 5.5, depth: ev.depth ?? 0.6, dur: ev.dur || 0.6, attack: ev.attack || 0.12, jit: (this.rng() - 0.5) * 0.6 }; break; }
       case 'palm':   // the palm lands on (or lifts from) the strings near the bridge, ringing ones included
         for (const st of this.strings) for (const v of st.voices) {
@@ -715,7 +718,11 @@ class GuitarEngine {
       for (let c = 0; c < v.n; c++) { v.y1[c] *= kc; v.y2[c] *= kc; }
     }
     s.midi = midi; s.fret = Math.round(midi - s.open);
-    s.releaseAt = -1;
+    s.releaseAt = -1; v.bendShift = 0; v.vibShift = 0;
+    // a bend or vibrato already under way belonged to the previous note; one still pending was sent for this note
+    // (it is handled before the pluck, which waits out the pick's contact time)
+    if (s.sbend && s.sbend.at <= this.clock) s.sbend = null;
+    if (s.vib && s.vib.at <= this.clock) s.vib = null;
     v.live = true;
     // damping state
     if (ev.dead) { v.extraTarget = 140; v.extra = 140; v.extraRate = 1; }
@@ -1151,6 +1158,17 @@ class GuitarEngine {
     for (const s of this.strings) {
       // finger vibrato on this string: the fretting finger bends the string and lets it back (pitch moves up from
       // the note, not around it), with the width easing in; a wide, violin-like vibrato needs a scalloped board
+      const bd = s.sbend;
+      if (bd) {
+        const t = (this.clock - bd.at) / this.sr, v = s.v;
+        if (t >= 0) {
+          const u = Math.min(1, t / bd.rise), sm = u * u * (3 - 2 * u);
+          const rel = bd.release != null && t > bd.release ? Math.min(1, (t - bd.release) / bd.rise) : 0;
+          v.bendShift = bd.amount * sm * (1 - rel);
+          if (rel >= 1) { v.bendShift = 0; s.sbend = null; }
+          this.updateCoefs(v, true);
+        }
+      }
       const vb = s.vib;
       if (vb) {
         const t = (this.clock - vb.at) / this.sr, v = s.v;

@@ -344,6 +344,10 @@ function bindHandStyle() {
     const k = $('handStyle').value; strum.set({ style: k }); store.set('o.style', k);
     // each style starts at its typical tempo unless a MIDI clock is setting it
     const clocked = clockTicks.length === 25 && performance.now() - clockTicks[24] < 1000;
+    // a style with a signature pick selects it (Yngwie: Delrin 1.5 mm, bevelled); it can be changed afterwards
+    if (HAND_STYLES[k].pickType && GUITAR_PICKS[HAND_STYLES[k].pickType] && $('pickType').value !== HAND_STYLES[k].pickType) {
+      $('pickType').value = HAND_STYLES[k].pickType; $('pickType').dispatchEvent(new Event('change'));
+    }
     if (!clocked && HAND_STYLES[k].tempo) { $('bpm').value = HAND_STYLES[k].tempo; $('bpmOut').textContent = HAND_STYLES[k].tempo; strum.set({ bpm: HAND_STYLES[k].tempo }); store.set('s.bpm', HAND_STYLES[k].tempo); }
   });
 }

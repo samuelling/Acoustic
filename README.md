@@ -141,6 +141,31 @@ The ringing string keeps its motion and changes length at once; that is the lega
     - keyswitch notes C1 (auto), C♯1 (slides), D1 (hammer/pull), D♯1 (off).
   - Trills come out as alternating hammer-ons and pull-offs.
 
+### 8. Yngwie mode (`src/lines.js`; `lineTick` in `src/hand.js`)
+
+A pattern style that plays generated neoclassical lead lines over the held chord, after Yngwie Malmsteen's playing as documented in transcriptions and slow-motion analyses. *Documented* rules come from those sources. *Estimated* numbers are my reading of recordings, and the generator's choices are random within them.
+- **Harmony (documented).** A minor chord is i: harmonic minor, with natural minor in some descending sequences. A major chord is V of the minor key a fourth above: Phrygian dominant, never the natural 7th. A diminished chord is vii°7 of the minor key a semitone above; its cells move in minor thirds. Over a V chord, the diminished seventh on its third (the V7♭9 sound) also appears.
+- **Picking (documented: Troy Grady's *Cracking the Code*; Guitar Interactive).** Downward pickslanting. Upstrokes escape the strings, so string changes come after upstrokes. After a downstroke the pick can only go on to the next higher string, with another downstroke (a sweep). A descending change after a downstroke turns the last note on the old string into a pull-off; where that can't happen, the pick hops the string and loses a few ms. Every figure and every new string in a run starts on a downstroke. The first note of each group is accented (+15–25 %, estimated). The previous string is damped at each change.
+- **Figures (documented).**
+  - single-string sixes (3-1-2-3-2-1 degrees, moving down a scale step);
+  - single-string fours;
+  - two-string descending sixes (down-up-pull-off per string);
+  - Bach-style pedal point on the top string;
+  - the three-string sweep loop (D D D U pull-off U);
+  - ascending five-string arpeggios with a hammer-on on the A string, landing on the top note;
+  - diminished cells across E-B-G (U U D) climbing in minor thirds;
+  - three-note-per-string runs;
+  - trills ending in a turn.
+- **Phrasing (estimated).**
+  - A phrase goes: an optional slow statement, a burst of 1–3 figures, a run or arpeggio into a long note, then a breath.
+  - The long note gets wide one-sided vibrato (~4.6–5.9 Hz, +60–80 cents, starting 120–300 ms late and easing in). Sometimes it is instead picked a whole step low and bent up in 80–150 ms.
+  - Runs rush toward their target: the first quarter is 8–15 % slow and the end fast.
+  - Landings are within ~20 ms of the beat, or 40–80 ms late after a small stall one time in five.
+  - Per-note jitter is 3–6 ms, by skill.
+- **Tempo and intensity.** Sextuplets at 120 BPM give 12 notes/s, his usual rate; above ~150 BPM the figures go to sixteenths. How hard you play the chord sets the intensity. Softly, it sings in sixteenths with longer held notes. Hard, it chains more figures in sextuplets. On acoustic, density is about 40 % lower than on his electric records.
+- **Pick.** Choosing the style selects his pick, a 1.5 mm Delrin (Dunlop YJM) with a bevelled edge. You can change it afterwards. He tunes down a half step; the synth stays at concert pitch.
+- **Engine support.** `sbend`: a per-string bend with a smooth rise and optional release. Bends and vibrato sent with a pluck now survive its pick-contact delay.
+
 ## Controls
 
 - MIDI: notes, sustain (CC64 = let ring / latch the pattern), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st), portamento time (CC5 = slide speed), portamento on/off (CC65 = legato on/off), legato pedal (CC68 = slide while held), keyswitches C1–D♯1 (legato mode), breath (CC2 = finger-noise level), aftertouch (finger pressure while sliding), clock (pattern tempo).
@@ -221,3 +246,4 @@ The analyzer reports per-partial starting level and T60, inharmonicity, spectral
 - Weinzierl, Vorländer et al. (2017), "A database of anechoic microphone array measurements of musical instruments," TU Berlin.
 - Allen & Berkley (1979), image method; De Sena et al. (2015), randomized image method; Barron & Lee (1988), energy relations; Wenmaekers et al. (2014), air absorption.
 - Hodgkinson, Timoney & Lazzarini (2010), tension-modulated steel-string partial tracks, DAFx.
+- Grady, T., *Cracking the Code*: "Yngwie Malmsteen's rotational picking mechanic" (Guitar World) and the Volcano seminar on the six-note pattern (troygrady.com); Guitar Interactive tech session with Yngwie Malmsteen; Premier Guitar, "How Yngwie Malmsteen unleashes the fury" and "Inside the harmonic minor scale"; Vintage Guitar, "Fretprints: Yngwie Malmsteen"; Guitar Player, position shifts and alternate picking; Dunlop YJM 1.5 mm Delrin pick specification.
