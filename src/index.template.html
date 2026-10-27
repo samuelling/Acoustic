@@ -1,0 +1,118 @@
+<title>Acoustic</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="A physically modelled acoustic guitar for the browser, with a strumming hand that plays your keyboard chords the way a guitarist would.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Young+Serif&display=swap">
+<style>/*@@STYLE@@*/</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Acoustic</h1>
+      <span class="sub">physical-model guitar · strumming hand</span>
+    </div>
+    <div class="top-actions">
+      <span class="status" title="MIDI input"><span id="midiDot" class="dot"></span><span id="midiStatus">MIDI off</span></span>
+      <button id="recBtn" class="btn rec" aria-pressed="false" type="button">● Record</button>
+      <button id="panicBtn" class="btn" type="button" title="Silence every string">Mute all</button>
+    </div>
+  </header>
+
+  <section class="neck-card" aria-label="Guitar neck">
+    <canvas id="neck"></canvas>
+    <div class="neck-shape" id="shapeText">x32010</div>
+    <div class="neck-legend">low E on top, as you see it playing · swipe across the strings to strum · tap the neck to fret</div>
+    <div class="start-overlay" id="startOverlay">
+      <button class="btn primary" id="startBtn" type="button">Tap to start the guitar</button>
+      <small>Sound starts after a tap, as browsers require.</small>
+    </div>
+  </section>
+
+  <section class="play" aria-label="Chord pads and strum">
+    <div class="chords" id="chords"></div>
+    <div class="strum-pads">
+      <div class="pad" id="padDown" role="button" tabindex="0" aria-label="Downstroke">↓<small>down · [</small></div>
+      <div class="pad" id="padUp" role="button" tabindex="0" aria-label="Upstroke">↑<small>up · ]</small></div>
+    </div>
+  </section>
+
+  <section class="keys-card" aria-label="Keyboard">
+    <div class="keys-head">
+      <span class="lbl">Keyboard — play chords and the hand strums them. Computer keys <span class="kbd">A W S E D F T G Y H U J K</span>, octave <span class="kbd">Z</span> <span class="kbd">X</span>, sustain <span class="kbd">Space</span>, palm mute <span class="kbd">Shift</span>.</span>
+      <div class="toggles">
+        <button class="btn" id="octDown" type="button">Oct −</button>
+        <span class="status" id="octLabel">C3</span>
+        <button class="btn" id="octUp" type="button">Oct +</button>
+      </div>
+    </div>
+    <div class="keys-scroll"><div class="keys" id="keys"></div></div>
+  </section>
+
+  <section class="tray">
+    <div class="group">
+      <h2>Hand</h2>
+      <p class="hint">How the notes you play become a guitarist's motion.</p>
+      <div class="row wide"><label>Technique</label><div class="seg" data-opt="mode"><button data-v="pick">Pick strum</button><button data-v="finger">Fingerstyle</button></div></div>
+      <div class="row wide"><label>Voicing</label><div class="seg" data-opt="voicing"><button data-v="played">As played</button><button data-v="guitarize">Guitar shape</button></div></div>
+      <div class="row wide"><label>Direction</label><div class="seg" data-opt="direction"><button data-v="auto">Auto</button><button data-v="down">Down</button><button data-v="up">Up</button><button data-v="alternate">Alternate</button></div></div>
+      <div class="row"><label for="speed">Stroke time</label><input id="speed" type="range" min="10" max="90" step="1" value="35"><output id="speedOut">35 ms</output></div>
+      <div class="row"><label for="humanize">Humanize</label><input id="humanize" type="range" min="0" max="100" value="60"><output id="humanizeOut">60</output></div>
+      <div class="row"><label for="updepth">Upstroke reach</label><input id="updepth" type="range" min="0" max="100" value="55"><output id="updepthOut">55</output></div>
+      <div class="row"><label for="gather">Chord window</label><input id="gather" type="range" min="5" max="60" value="18"><output id="gatherOut">18 ms</output></div>
+      <div class="row"><label for="keyvel">Pad strength</label><input id="keyvel" type="range" min="10" max="100" value="72"><output id="keyvelOut">72</output></div>
+      <div class="toggles">
+        <button class="btn" id="letRing" aria-pressed="false" type="button">Let ring</button>
+        <button class="btn" id="palm" aria-pressed="false" type="button">Palm mute</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Instrument</h2>
+      <p class="hint">Every sound here is computed from strings, a pick and a wooden box. Nothing is sampled.</p>
+      <div class="row wide"><label for="preset">Guitar</label>
+        <select id="preset"><option value="dreadnought">Steel-string dreadnought</option><option value="parlor">Steel-string parlor</option><option value="classical">Nylon classical</option></select></div>
+      <div class="row wide"><label for="tuning">Tuning</label>
+        <select id="tuning">
+          <option value="40,45,50,55,59,64">Standard  E A D G B E</option>
+          <option value="38,45,50,55,59,64">Drop D  D A D G B E</option>
+          <option value="38,45,50,55,57,62">DADGAD</option>
+          <option value="38,43,50,55,59,62">Open G  D G D G B D</option>
+          <option value="40,47,52,56,59,64">Open E  E B E G# B E</option>
+          <option value="39,44,49,54,58,63">Half step down</option>
+        </select></div>
+      <div class="row"><label for="capo">Capo</label><input id="capo" type="range" min="0" max="9" value="0"><output id="capoOut">none</output></div>
+      <div class="row"><label for="pickpos">Pick position</label><input id="pickpos" type="range" min="6" max="40" value="20"><output id="pickposOut">20%</output></div>
+      <div class="row"><label for="bright">String age</label><input id="bright" type="range" min="0" max="100" value="55"><output id="brightOut">fresh</output></div>
+      <div class="row"><label for="body">Body</label><input id="body" type="range" min="0" max="100" value="80"><output id="bodyOut">80</output></div>
+      <div class="row"><label for="bodysize">Body size</label><input id="bodysize" type="range" min="80" max="125" value="100"><output id="bodysizeOut">100%</output></div>
+      <div class="row"><label for="symp">Sympathetic</label><input id="symp" type="range" min="0" max="100" value="50"><output id="sympOut">50</output></div>
+      <div class="row"><label for="noise">Finger noise</label><input id="noise" type="range" min="0" max="100" value="50"><output id="noiseOut">50</output></div>
+      <div class="row"><label for="width">Mic width</label><input id="width" type="range" min="0" max="100" value="70"><output id="widthOut">70</output></div>
+      <div class="row"><label for="room">Room</label><input id="room" type="range" min="0" max="100" value="22"><output id="roomOut">22</output></div>
+      <div class="row"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="75"><output id="volOut">75</output></div>
+    </div>
+
+    <div class="group">
+      <h2>MIDI &amp; recording</h2>
+      <div class="row wide"><label for="midiIn">Input</label><select id="midiIn"><option value="all">All inputs</option></select></div>
+      <p class="note" id="midiNote">Connect a MIDI keyboard and it is picked up automatically. Mod wheel sets stroke time, sustain pedal lets strings ring, soft pedal (CC 67) palm-mutes, pitch bend bends strings ±2 semitones.</p>
+      <div class="rec-out" id="recOut"><span class="note">Record captures the guitar's exact output as a 48 kHz WAV.</span></div>
+    </div>
+  </section>
+
+  <section class="group science">
+    <details>
+      <summary>How the sound is made</summary>
+      <p><b>Strings.</b> Each of the six strings is a digital waveguide: a delay line one period long that a wave runs around, losing a little energy and treble on every trip. Two waveguides per string model the two directions a string can swing. The one pushing into the soundboard drains fast and makes the bright attack; the one parallel to the top rings on. Their slight tuning difference gives real guitars their slow beating.</p>
+      <p><b>Pick.</b> The excitation is a force pulse whose length depends on where you pick along the string, which cuts out the harmonics that have a node there. Harder strokes give a sharper pulse and a brighter attack, and a hard pluck briefly raises string tension, so the note starts a few cents sharp and settles.</p>
+      <p><b>Body.</b> The strings drive a bank of resonant modes: the air resonance near 100 Hz, the top-plate pair near 190 and 205 Hz, then dozens of denser, weaker modes up to 7 kHz, heard from two mic positions. Below the air resonance the top and the soundhole cancel, so the low E fundamental is quieter than its overtones, as on a real guitar. Undamped strings pick up energy through the bridge and ring sympathetically.</p>
+      <p><b>Calibration.</b> Decay times per harmonic, inharmonicity and the brightness curve over time were fitted against recordings of real steel-string guitar notes.</p>
+      <p><b>Hand.</b> Notes that arrive together become a chord, placed on the neck with a fingering search (span, barres, open strings, voice leading). A pick stroke reaches the strings in order with timing set by velocity, string gauge and a little human scatter. Strum direction follows a pendulum: the hand swings every subdivision, so the gap since your last chord decides whether this one is a down or an upstroke.</p>
+    </details>
+  </section>
+</div>
+
+<script id="dsp-src">/*@@DSP@@*/</script>
+<script>/*@@STRUM@@*/</script>
+<script>/*@@APP@@*/</script>
