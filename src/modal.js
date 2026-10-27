@@ -434,7 +434,8 @@ class GuitarEngine {
       sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high',
       build: { top: 'sitka', back: 'indian', bracing: 'standard', finish: 'nitro', hold: 'seated', style: 'luthier' },
       scene: { mics: 'fret12', hold: 'seated' },
-      pick: { type: 'cell71', angle: 20, grip: 'normal' }
+      pick: { type: 'cell71', angle: 20, grip: 'normal' },
+      fingerAmt: 1, fingerPress: 1   // finger-on-string sound: level (1 = as measured in real recordings), pressure
     };
     this.bend = 0; this.bendTarget = 0;
     this.RING = 16384; this.RMASK = this.RING - 1;
@@ -858,7 +859,7 @@ class GuitarEngine {
     const seg = ev.seg || [0, 1], dur = Math.max(0.02, ev.dur || 0.15);
     const n = Math.round(dur * (seg[1] - seg[0]) * sr);
     const amt = this.params.noise * (ev.amt ?? 1);
-    if (n < 8 || amt <= 0) return;
+    if (n < 8 || this.params.noise <= 0) return;
     const pw = WIND_PITCH[nylon ? 'nylon' : 'steel'][ev.s] || 0;
     // the winding's profile over one wire, as a lookup table: round wires side by side, seen through a ridge's
     // ~0.18 mm contact width (which smooths the corrugation: Fourier terms times sinc(n w / p))
@@ -898,6 +899,12 @@ class GuitarEngine {
   // wear and wire-to-wire variation, fixed along each string (smoothly interpolated between wraps)
   wear(seed, k) { const h = (x) => { let t = (x * 374761393 + seed * 668265263) | 0; t = (t ^ (t >>> 13)) * 1274126177 | 0; return ((t ^ (t >>> 16)) >>> 0) / 4294967296; }; return 0.82 + 0.33 * h(k); }
   runFriction(nBlock) {
+    // live modulation (smoothed per block): fingerAmt scales the level; fingerPress scales how hard the finger
+    // presses the string, which changes the contact itself (more ridges catch, grittier and louder)
+    const P = this.params;
+    this.fAmt = (this.fAmt ?? 1) + ((P.fingerAmt ?? 1) - (this.fAmt ?? 1)) * 0.25;
+    this.fPress = (this.fPress ?? 1) + ((P.fingerPress ?? 1) - (this.fPress ?? 1)) * 0.25;
+    const lvl = this.fAmt, prs = this.fPress;
     const sr = this.sr, OS = 1, dt = 1 / (sr * OS), t0 = this.clock;   // ridges are heavily damped: stable at the audio rate
     const muS = FRIC_MU[0], muK = FRIC_MU[1], vS = FRIC_MU[2];   // skin on metal: small static-kinetic gap, Stribeck speed
     for (let g = this.fric.length - 1; g >= 0; g--) {
@@ -915,7 +922,7 @@ class GuitarEngine {
           G.vn += ((this.rng() * 2 - 1) - G.vn) * G.vnC; G.vn2 += (G.vn - G.vn2) * G.vnC;   // slow speed wobble
           const xf = G.x0 + G.dx * (sm + G.subA * bump) + G.trA * trem;
           const vf = (G.dx * (dsm + G.subA * dbump) / G.dur) * (1 + 2.5 * G.vn2) + G.trA * TAU * G.trF * Math.cos(TAU * G.trF * tt + G.trP);
-          const press = (G.p0 + (G.p1 - G.p0) * u) * (1 + 0.06 * trem);
+          const press = (G.p0 + (G.p1 - G.p0) * u) * (1 + 0.06 * trem) * prs;
           const N0 = 0.1 + 1.8 * Math.max(0, press);                  // total normal force, N
           const d0 = 1.5e-4 * Math.cbrt(Math.max(0.02, press));       // skin indentation, m
           // nearest fret wire to the finger (worn patches of winding sit there)
@@ -965,7 +972,7 @@ class GuitarEngine {
         G.hpA = 0.995 * (G.hpA + Fax - G.xA); G.xA = Fax;
         G.hpN = 0.995 * (G.hpN + Fn - G.xN); G.xN = Fn;
         const env = Math.min(1, G.k / 64, (G.n - G.k) / 64);
-        const idx = (t0 + i) & this.RMASK, ax = G.hpA * env * G.amt, nn = G.hpN * env * G.amt;
+        const idx = (t0 + i) & this.RMASK, ax = G.hpA * env * G.amt * lvl, nn = G.hpN * env * G.amt * lvl;
         ext[idx] += ax * FRIC_GAIN;
         // the pressing-force fluctuations and the sideways jerk of ridges catching on the helical wraps shake the
         // string transversally at the finger

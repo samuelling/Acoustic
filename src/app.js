@@ -234,6 +234,7 @@ const sliders = {
   keyvel: { out: v => v, apply: () => {} },
   // slide speed: 0..100 -> x0.33 .. x3 (log), shown as the typical time of a 3-fret slide at medium force
   slidespeed: { out: v => Math.round((0.055 + 0.075 * 2) * 0.895 / Math.pow(3, (v - 50) / 50) * 1000) + ' ms', apply: v => strum.set({ slideSpeed: Math.pow(3, (v - 50) / 50) }) },
+  fingernoise: { out: v => v + '%', apply: v => setEngine({ fingerAmt: v / 100 }) },
   bpm: { out: v => v, apply: v => strum.set({ bpm: v }) },
   skill: { out: v => v, apply: v => strum.set({ skill: v / 100 }) },
   brushes: { out: v => v + '%', apply: v => strum.set({ brushes: v / 100 }) },
@@ -616,11 +617,16 @@ function onMidi(e) {
   else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) noteOff(d1);
   else if (cmd === 0xb0) {
     if (d1 === 64) strum.setSustain(d2 >= 64);
+    else if (d1 === 2) { const v = Math.round(d2 / 127 * 200); $('fingernoise').value = v; $('fingernoiseOut').textContent = v + '%'; setEngine({ fingerAmt: v / 100 }); }   // breath: finger-noise level
     else if (d1 === 5) { const v = Math.round(100 - d2 / 127 * 100); $('slidespeed').value = v; sliders.slidespeed.apply(v); $('slidespeedOut').textContent = sliders.slidespeed.out(v); }   // portamento time
     else if (d1 === 65) { const on = d2 >= 64; strum.set({ legato: on ? 'slide' : 'off' }); $('legato').setAttribute('aria-pressed', on); }   // portamento on/off
     else if (d1 === 67) { strum.set({ palm: d2 >= 64 }); $('palm').setAttribute('aria-pressed', d2 >= 64); }
     else if (d1 === 1) { const ms = Math.round(12 + (d2 / 127) * 70); $('speed').value = ms; $('speedOut').textContent = ms + ' ms'; strum.set({ speed: ms / 1000 }); }
     else if (d1 === 123 || d1 === 120) strum.allOff();
+  } else if (cmd === 0xd0 || cmd === 0xa0) {
+    // aftertouch: how hard the finger presses the string while it slides (1 = normal, up to 2.5x)
+    const v = cmd === 0xd0 ? d1 : d2;
+    send([{ type: 'params', params: { fingerPress: 1 + 1.5 * v / 127 }, t: engineTime() }]);
   } else if (cmd === 0xe0) {
     const v = ((d2 << 7) | d1) - 8192;
     send([{ type: 'bend', value: (v / 8192) * 2, t: engineTime() }]);
