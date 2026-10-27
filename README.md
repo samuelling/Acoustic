@@ -98,7 +98,15 @@ No sample or noise layer is added on top. The incidental sounds come from the ha
   - The force acts along the string's axis, so it drives the string's own longitudinal modes. These push on the bridge, and from there the body, mics and room carry it like every other sound; a little is heard straight from the fingertip.
   - This reproduces what Pakarinen, Penttinen & Bank (2007) measured: lowpass noise with time-varying harmonics set by the sliding speed, and fixed peaks from the longitudinal modes.
   - Plain strings only hiss faintly.
-- **The hand's path is minimum-jerk** (Flash & Hogan 1985), with its bell-shaped speed profile, so a squeak rises in pitch and falls again: about 2 kHz as the hand accelerates, 3 kHz at full speed, under 1 kHz as it settles, for a 4-fret move on the low E.
+- **Calibrated against real slides.** GuitarSet (Xi et al. 2018, CC BY 4.0) recorded an acoustic steel-string guitar with a microphone and annotated every string's pitch. `proto/gs_slides.py` finds 437 genuine slides on the wound strings (≥ 2 semitones, 15–150 ms per semitone, no instantaneous jumps): median 168 ms for 2.5 frets (10–90%: 70–325 ms).
+  - `proto/gs_squeak.py` masks every harmonic of every sounding note and measures what the slide adds. In 226 slides with a clear finger sound, it sits ~21 dB below the note's harmonics and is bright: concentrated at 4–8 kHz, with a centroid near 6 kHz *whatever the hand speed*. Below 4 kHz the note's own partials hide it.
+  - `test/gs_model_slides.js` plays the same slides (string, frets, duration) through the synth and the same analysis is applied, using the synth's own pitch track. The fit showed:
+    - The friction must shake the string sideways, a millimetre or two from the stopping fret, which favours its high overtones.
+    - The contact's own radiation carries the top octave.
+    - The string's longitudinal path must stay small; it gave the boxy ~1 kHz "zip" real slides don't have.
+    - Fret crossings are knocks of a few millinewtons.
+  - The fitted model matches the real finger sound within 1.4 dB rms across 4–12.5 kHz, with the same fixed ~6 kHz centroid at every hand speed. Slide timing was matched to the recorded durations.
+ (Flash & Hogan 1985), with its bell-shaped speed profile, so a squeak rises in pitch and falls again: about 2 kHz as the hand accelerates, 3 kHz at full speed, under 1 kHz as it settles, for a 4-fret move on the low E.
 - **Gestures.** A keyboard reveals the next chord only when it arrives, so a change becomes two physical events:
   - *Departure*: on letting go of a chord, fingers on wound strings drag briefly as the hand lifts away, the pressure fading out.
   - *Arrival*: on a chord needing a position shift, the guide finger (one staying on its string) slides into place, slowing and pressing down as the strum begins.
@@ -160,6 +168,7 @@ The analyzer reports per-partial starting level and T60, inharmonicity, spectral
 - Wing & Kristofferson (1973), the timing of interresponse intervals; Vorberg & Wing (1996); Repp (2005), sensorimotor synchronization review.
 - Friberg & Sundström (2002), swing ratios and ensemble timing in jazz, Music Perception 19; Honing & de Haas (2008), Music Perception 25; Gouyon (2007), microtiming in samba de roda, SBCM.
 - Carral & Paset (2008), plectrum thickness and the radiated sound of the guitar, Acoustics'08; Perng, Smith & Rossing (2010), harpsichord plectrum–string interaction, DAFx; Chadefaux et al. (2012), harp plucking, JASA 131.
+- Xi, Bittner, Pauwels, Ye & Bello (2018), GuitarSet: a dataset for guitar transcription, ISMIR (data: doi 10.5281/zenodo.3371780).
 - Pakarinen, Penttinen & Bank (2007), analysis of handling noises on wound strings, JASA 122 EL197; Pakarinen, Puputti & Välimäki (2008), slide guitar synthesizer with gestural control, NIME.
 - Flash & Hogan (1985), the coordination of arm movements: minimum-jerk model, J. Neuroscience 5.
 - Niedt, D., choosing right-hand fingering (crossing rules); Werner, S., planting; Tennant, *Pumping Nylon*.

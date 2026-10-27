@@ -513,9 +513,10 @@ class StrumEngine {
     //  - the player's chosen speed (slider / CC5), and in a running pattern the beat (slides scale with tempo)
     //  - natural spread from slide to slide (log-normal, wider for a weaker player)
     const vel = n.vel ?? 0.7, hum = (this.o.humanize ?? 0.6) / 0.6;
-    let dur = (0.055 + 0.075 * Math.log2(1 + Math.abs(d))) * (1.7 - 1.15 * vel) / Math.max(0.2, this.o.slideSpeed || 1);
+    // (GuitarSet's 437 recorded slides: median 168 ms for a median 2.5 frets, 10-90% 70-325 ms)
+    let dur = 0.9 * (0.055 + 0.075 * Math.log2(1 + Math.abs(d))) * (1.7 - 1.15 * vel) / Math.max(0.2, this.o.slideSpeed || 1);
     if (this.hand && this.hand.running) dur *= clamp(96 / (this.o.bpm || 96), 0.6, 1.5);
-    dur *= Math.exp(this.gaussN() * (0.28 - 0.15 * skill) * hum) * (1.1 - 0.2 * skill);
+    dur *= Math.exp(this.gaussN() * (0.36 - 0.15 * skill) * hum) * (1.1 - 0.2 * skill);
     dur = clamp(dur, 0.035, 0.9);
     // where in the move the hand is fastest: a quick snap rushes early and coasts in; a lazy slide starts slowly
     const skew = clamp(0.5 + 0.18 * (0.6 - vel) + 0.08 * this.gaussN() * hum, 0.33, 0.67);

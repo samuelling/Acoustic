@@ -133,7 +133,16 @@ function esToShore(Es) {
 // Pitch of the outer winding (wrap-wire diameter), m, strings low E..G; plain strings have none. Steel: phosphor-bronze
 // 12-53 set; nylon: silver-plated copper basses (finer wire, higher squeak).
 const WIND_PITCH = { steel: [0.36e-3, 0.30e-3, 0.24e-3, 0.18e-3, 0, 0], nylon: [0.16e-3, 0.14e-3, 0.12e-3, 0, 0, 0] };
-let FRIC_GAIN = 0.4, FRIC_AIR = 0.008, FRIC_NORMAL = 0.02, FRIC_MU = [0.56, 0.5, 0.03, 1.0];   // static, kinetic, Stribeck speed (m/s), skin damping ratio   // axial force into the string; share heard straight from the fingertip
+let TR_GAIN = 1;
+// Finger-contact constants, fitted to 111 slides recorded in GuitarSet (Xi et al. 2018; proto/gs_squeak.py,
+// test/gs_model_slides.js): with these the finger sound matches the real one within 1.7 dB rms across 4-12.5 kHz,
+// at the same level (-21 dB re the note) and with the same fixed colour (centroid ~6 kHz whatever the hand speed).
+// delta: contact distance from the stopping fret (m); skinHz: how fast the skin follows the corrugation;
+// axSide: share of the ridges' catching force felt sideways; bump: fret-crossing knock (N); ridgeHz: ridge resonance.
+const FINGER = { delta: 0.0015, skinHz: 4000, axSide: 1.5, bump: 0.004, ridgeHz: 1400 };
+// the axial path (string's longitudinal modes) is kept small: below 4 kHz the recordings can't constrain it, and a
+// strong one gives the boxy ~1 kHz zip that real slides don't have; the contact's own radiation carries the top octave
+let FRIC_GAIN = 0.03, FRIC_AIR = 0.02, FRIC_NORMAL = 1.2, FRIC_MU = [0.56, 0.5, 0.03, 1.0];   // static, kinetic, Stribeck speed (m/s), skin damping ratio   // axial force into the string; share heard straight from the fingertip
 const GRIPS = { tight: 3.5e-3, normal: 5e-3, loose: 7.5e-3 };   // exposed tip length beyond the fingers
 
 // Quasi-static release: the string (lateral stiffness Ks = T L / (x (L - x))) pushes on the pick face; the pick bends
@@ -432,6 +441,9 @@ class GuitarEngine {
     this.bodyIn = new Float64Array(this.RING);    // extra force into the body (pick noise etc.)
     this.dirL = new Float64Array(this.RING); this.dirR = new Float64Array(this.RING);
     this.lonExt = [0, 1, 2, 3, 4, 5].map(() => new Float64Array(this.RING));  // axial friction force on each string
+    this.trExt = [0, 1, 2, 3, 4, 5].map(() => new Float64Array(this.RING));   // transverse friction force at the finger
+    this.trDelta = [0.004, 0.004, 0.004, 0.004, 0.004, 0.004];   // finger contact: distance from the stopping point, m
+    this.trOn = [false, false, false, false, false, false]; this.W = new Float64Array(4096);
     this.staticZ = 0; this.staticY = 0;           // released pick load (decays slowly)
     this.radL = this.radR = this.radXL = this.radXR = 0;
     this.yTmp = new Float64Array(6);
@@ -868,7 +880,7 @@ class GuitarEngine {
     const ridges = [];
     for (let o = -a / 2 + lamS * rng(); o < a / 2; o += lamS * (0.92 + 0.16 * rng())) {
       const w = Math.sqrt(Math.max(0, 1 - (2 * o / a) ** 2));
-      const fr = 1400 * (0.8 + 0.4 * rng()), kt = 160, mt = kt / (TAU * fr) ** 2;
+      const fr = FINGER.ridgeHz * (0.8 + 0.4 * rng()), kt = 160, mt = kt / (TAU * fr) ** 2;
       ridges.push({ o, w, kt, mt, ct: 2 * (FRIC_MU[3] ?? 0.8) * Math.sqrt(kt * mt), y: 0, vy: 0, stick: true, h1: 0, h2: 0 });
     }
     const wsum = ridges.reduce((t, r) => t + r.w, 0) || 1;
@@ -880,7 +892,7 @@ class GuitarEngine {
       // a corrective sub-movement near the end of the reach (Meyer et al. 1988), and the skin's grab-and-give
       subA: (rng() - 0.3) * 0.06, subC: 0.78 + 0.12 * rng(), vn: 0, vn2: 0, vnC: 1 - Math.exp(-TAU * 35 / (2 * sr)),
       scale: this.P.scale,
-      fc: 1 - Math.exp(-TAU * 900 * (0.8 + 0.4 * rng()) / (2 * sr)), hpA: 0, hpN: 0, xA: 0, xN: 0,
+      fc: 1 - Math.exp(-TAU * FINGER.skinHz * (0.8 + 0.4 * rng()) / sr), hpA: 0, hpN: 0, xA: 0, xN: 0, delta: FINGER.delta * (0.7 + 0.6 * rng()),
       pan: -0.35 + (ev.s - 2.5) / 12 });
   }
   // wear and wire-to-wire variation, fixed along each string (smoothly interpolated between wraps)
@@ -955,10 +967,13 @@ class GuitarEngine {
         const env = Math.min(1, G.k / 64, (G.n - G.k) / 64);
         const idx = (t0 + i) & this.RMASK, ax = G.hpA * env * G.amt, nn = G.hpN * env * G.amt;
         ext[idx] += ax * FRIC_GAIN;
-        this.bodyIn[idx] += nn * FRIC_NORMAL;
+        // the pressing-force fluctuations and the sideways jerk of ridges catching on the helical wraps shake the
+        // string transversally at the finger
+        this.trExt[G.s][idx] += (nn + FINGER.axSide * ax) * FRIC_NORMAL;   // N
         this.dirL[idx] += ax * FRIC_AIR * (1 - G.pan); this.dirR[idx] += ax * FRIC_AIR * (1 + G.pan);
       }
-      if (G.k >= G.n) this.fric.splice(g, 1);
+      this.trOn[G.s] = true; this.trDelta[G.s] = G.delta || 0.004;
+      if (G.k >= G.n) { this.fric.splice(g, 1); if (!this.fric.some(x => x.s === G.s)) this.trOn[G.s] = false; }
     }
   }
 
@@ -984,7 +999,15 @@ class GuitarEngine {
       let lo = 0, hi = 1;
       for (let it = 0; it < 30; it++) { const m = (lo + hi) / 2; if ((pos(m) - wire) * (up ? 1 : -1) < 0) lo = m; else hi = m; }
       const newFret = up ? k + 1 : k;
-      this.post2({ type: 'fretstep', s: ev.s, shift: base + newFret - a, midi: st.open + newFret, _at: this.clock + Math.round(lo * dur * sr), _staged: true, p: ev.pressure ?? 0.8 });
+      // the string rolls over the fret wire under a pad several mm wide: the length changes over w / speed, not at
+      // once (done in six small steps; an instant jump splatters energy across the spectrum)
+      const tw = Math.min(1, Math.max(1e-3, lo)) ** gam, spd = Math.abs(x1 - x0) / dur * 30 * tw * tw * (1 - tw) * (1 - tw) * gam * Math.pow(Math.max(1e-3, lo), gam - 1);
+      const tCross = Math.min(0.015, Math.max(0.002, 0.003 / Math.max(0.05, spd)));
+      for (let q = 1; q <= 6; q++) {
+        const at = this.clock + Math.round((lo * dur + (q / 6 - 0.5) * tCross) * sr);
+        this.post2({ type: 'fretstep', s: ev.s, shift: base + newFret - a - (up ? 1 : -1) * (1 - q / 6), midi: st.open + newFret,
+          _at: Math.max(this.clock, at), _staged: true, p: ev.pressure ?? 0.8, final: q === 6 });
+      }
     }
     // the finger presses as it slides: a touch more damping, and the winding sings under it
     for (const vv of st.voices) { vv.extraTarget = Math.max(vv.extraTarget, 2.5); vv.extraRate = 0.3; }
@@ -993,11 +1016,13 @@ class GuitarEngine {
   fretStep(ev) {
     const st = this.strings[ev.s]; if (!st) return;
     const v = st.v;
-    v.shift = ev.shift; st.midi = ev.midi; st.fret = Math.round(ev.midi - st.open);
-    // the string lifts off one fret and lands on the next: a small loss, and a bump into the bridge
-    for (let q = 0; q < v.nact; q++) { const c = v.act[q]; v.y1[c] *= 0.94; v.y2[c] *= 0.94; }
+    v.shift = ev.shift;
     this.updateCoefs(v, true);
-    const at = this.clock & this.RMASK, amp = 0.012 * (ev.p ?? 0.8) * Math.min(1, st.env * 6 + 0.1);
+    if (!ev.final) return;
+    st.midi = ev.midi; st.fret = Math.round(ev.midi - st.open);
+    // the string settles on the next fret: a small loss, and a bump into the bridge
+    for (let q = 0; q < v.nact; q++) { const c = v.act[q]; v.y1[c] *= 0.94; v.y2[c] *= 0.94; }
+    const at = this.clock & this.RMASK, amp = FINGER.bump * (ev.p ?? 0.8) * Math.min(1, st.env * 6 + 0.1);
     for (let k = 0; k < 48; k++) this.bodyIn[(at + k) & this.RMASK] += amp * Math.sin(Math.PI * k / 48) * (this.rng() * 0.6 + 0.7);
   }
 
@@ -1132,15 +1157,26 @@ class GuitarEngine {
         const k = (t0 + i - CD) & CM;
         const u = symp * (ring[k] - own[k]); U[i] = u; if (u !== 0) anyU = true;
       }
+      // the finger rubbing the string: a transverse force a few mm from where the vibrating length ends, so mode k is
+      // driven in proportion to sin(k pi delta / L) - rising with k, a natural treble tilt
+      let anyW = false; const W = this.W;
+      if (this.trOn[j]) { const tr = this.trExt[j]; for (let i = 0; i < n; i++) { const k = (t0 + i) & this.RMASK; W[i] = tr[k]; tr[k] = 0; if (W[i] !== 0) anyW = true; } }
       for (let vv = 0; vv < 3; vv++) {
         const v = s.voices[vv];
-        const na = v.nact; if (!na) continue;
+        if (!v.nact && !(anyW && v === s.v)) continue;
+        if (anyW && v === s.v && v.nact < v.n) { for (let c = 0; c < v.n; c++) v.act[c] = c; v.nact = v.n; }   // every mode can be driven
         const act = v.act, c1a = v.c1, c2a = v.c2, y1a = v.y1, y2a = v.y2, wya = v.wy, wza = v.wz, gina = v.gin;
-        for (let q = 0; q < na; q++) {
+        const drive = anyW && v === s.v, kd = Math.PI * this.trDelta[j] / (v.L || 0.645);
+        // a point force F at x adds F sin(k pi x / L) dt^2 / (modal mass mu L / 2) to mode k each sample
+        const fGain = drive ? 2 / (this.sr * this.sr * this.P.strings[j].mu * (v.L || 0.645)) * TR_GAIN : 0;
+        for (let q = 0; q < v.nact; q++) {
           const c = act[q];
           const c1 = c1a[c], c2 = c2a[c], wy = wya[c], wz = wza[c];
           let y1 = y1a[c], y2 = y2a[c];
-          if (anyU) {
+          if (drive) {
+            const g = gina[c], gw = Math.sin(v.k[c] * kd) * fGain;
+            for (let i = 0; i < n; i++) { const y = c1 * y1 - c2 * y2 + (anyU ? g * U[i] : 0) + gw * W[i]; y2 = y1; y1 = y; FY[i] += wy * y; FZ[i] += wz * y; }
+          } else if (anyU) {
             const g = gina[c];
             for (let i = 0; i < n; i++) { const y = c1 * y1 - c2 * y2 + g * U[i]; y2 = y1; y1 = y; FY[i] += wy * y; FZ[i] += wz * y; }
           } else {
@@ -1311,7 +1347,8 @@ root.GUITAR_HOLDS = HOLDS;
 root.GUITAR_PICKS = PICKS;
 root.GUITAR_GRIPS = GRIPS;
 root.guitarPickModel = pickModel;
-root.guitarFriction = (g, a, n, mu) => { FRIC_GAIN = g; FRIC_AIR = a; if (n != null) FRIC_NORMAL = n; if (mu) FRIC_MU = mu; };
+root.guitarFinger = (o) => Object.assign(FINGER, o);
+root.guitarFriction = (g, a, n, mu, tr) => { FRIC_GAIN = g; FRIC_AIR = a; if (n != null) FRIC_NORMAL = n; if (mu) FRIC_MU = mu; if (tr != null) TR_GAIN = tr; };
 root.guitarShore = { toEs: shoreToEs, fromEs: esToShore };
 
 if (typeof registerProcessor === 'function' && typeof AudioWorkletProcessor !== 'undefined') {
