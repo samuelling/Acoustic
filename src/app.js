@@ -315,12 +315,13 @@ function applyPick() {
   const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip, pick.Es), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
   strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
 }
+// legato: overlapping single notes become hammer-ons, pull-offs or slides (see StrumEngine.tryGlide)
+function setLegato(m) { $('legatoMode').value = m; strum.set({ legato: m }); store.set('o.legatoMode', m); }
 function bindLegato() {
-  const b = $('legato'), on0 = store.get('o.legatoSlide', true);
-  const set = (on) => { b.setAttribute('aria-pressed', on); strum.set({ legato: on ? 'slide' : 'off' }); store.set('o.legatoSlide', on); };
-  b.addEventListener('click', () => set(b.getAttribute('aria-pressed') !== 'true'));
-  set(on0);
+  $('legatoMode').addEventListener('change', () => setLegato($('legatoMode').value));
+  setLegato(store.get('o.legatoMode', 'auto'));
 }
+const KEYSWITCH = { 24: 'auto', 25: 'slide', 26: 'hammer', 27: 'off' };   // C1, C#1, D1, D#1
 function bindHandStyle() {
   fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
   strum.set({ style: $('handStyle').value });
@@ -613,13 +614,15 @@ function onMidi(e) {
   const [st, d1, d2] = e.data; const cmd = st & 0xf0;
   if (st >= 0xf8) { onClock(st, e.timeStamp); return; }
   const t = ctx ? ctx.currentTime + Math.min(0, (e.timeStamp - performance.now()) / 1000) : undefined;
+  if ((cmd === 0x90 || cmd === 0x80) && KEYSWITCH[d1]) { if (cmd === 0x90 && d2 > 0) setLegato(KEYSWITCH[d1]); return; }   // keyswitches
   if (cmd === 0x90 && d2 > 0) { start(); noteOn(d1, Math.pow(d2 / 127, 0.9), t); }
   else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) noteOff(d1);
   else if (cmd === 0xb0) {
     if (d1 === 64) strum.setSustain(d2 >= 64);
     else if (d1 === 2) { const v = Math.round(d2 / 127 * 200); $('fingernoise').value = v; $('fingernoiseOut').textContent = v + '%'; setEngine({ fingerAmt: v / 100 }); }   // breath: finger-noise level
     else if (d1 === 5) { const v = Math.round(100 - d2 / 127 * 100); $('slidespeed').value = v; sliders.slidespeed.apply(v); $('slidespeedOut').textContent = sliders.slidespeed.out(v); }   // portamento time
-    else if (d1 === 65) { const on = d2 >= 64; strum.set({ legato: on ? 'slide' : 'off' }); $('legato').setAttribute('aria-pressed', on); }   // portamento on/off
+    else if (d1 === 65) setLegato(d2 >= 64 ? 'auto' : 'off');   // portamento on/off
+    else if (d1 === 68) strum.legatoForce = d2 >= 64 ? 'slide' : null;   // legato pedal: slide while held
     else if (d1 === 67) { strum.set({ palm: d2 >= 64 }); $('palm').setAttribute('aria-pressed', d2 >= 64); }
     else if (d1 === 1) { const ms = Math.round(12 + (d2 / 127) * 70); $('speed').value = ms; $('speedOut').textContent = ms + ' ms'; strum.set({ speed: ms / 1000 }); }
     else if (d1 === 123 || d1 === 120) strum.allOff();

@@ -125,9 +125,25 @@ No sample or noise layer is added on top. The incidental sounds come from the ha
     - *Slide speed* sets the overall pace; MIDI CC5 (portamento time) controls it live and CC65 (portamento on/off) toggles legato slides.
   - This staircase is what separates a fretted glide from a slide guitar's continuous one.
 
+### 7. Hammer-ons and pull-offs (`legatoNote` in `src/modal.js`; `tryGlide` in `src/strum.js`)
+
+The ringing string keeps its motion and changes length at once; that is the legato.
+- **Hammer-on.** The fretting finger strikes the string onto a higher fret. The push is short and soft (fingertip, ~1.5 ms, ~8 mm wide), into the top, right at the new end of the vibrating length. The fingertip also knocks the fretboard, reaching the body through the neck. It comes out ~5 dB below a picked note, and darker.
+- **Pull-off.** The finger leaves by plucking the string sideways where it was pressing. On the now-longer string that point lies near the end, so the pluck is thin and bright, ~2–3 dB below a picked note. Pull-offs to an open string work.
+- **Choosing the technique.** A new single note pressed while the previous one is held:
+  - up to 4 semitones away (within the hand's reach) is a hammer-on going up or a pull-off going down;
+  - wider intervals, up to 7, slide.
+  - A soft legato note leans toward hammer/pull (up to 6 semitones), a firm one toward sliding (from 3).
+  - Overrides:
+    - the *Legato* selector (Auto / Slides / Hammer-ons & pull-offs / Off);
+    - MIDI CC68 (legato pedal: slide while held);
+    - CC65 (legato on/off);
+    - keyswitch notes C1 (auto), C♯1 (slides), D1 (hammer/pull), D♯1 (off).
+  - Trills come out as alternating hammer-ons and pull-offs.
+
 ## Controls
 
-- MIDI: notes, sustain (CC64 = let ring / latch the pattern), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st), portamento time (CC5 = slide speed), portamento on/off (CC65 = legato slides), breath (CC2 = finger-noise level), aftertouch (finger pressure while sliding), clock (pattern tempo).
+- MIDI: notes, sustain (CC64 = let ring / latch the pattern), soft pedal (CC67 = palm mute), mod wheel (stroke time), pitch bend (±2 st), portamento time (CC5 = slide speed), portamento on/off (CC65 = legato on/off), legato pedal (CC68 = slide while held), keyswitches C1–D♯1 (legato mode), breath (CC2 = finger-noise level), aftertouch (finger pressure while sliding), clock (pattern tempo).
 - Computer keys: `A W S E D F T G Y H U J K O L P ;` play notes, `Z`/`X` octave, `Space` sustain, `Shift` palm mute, `1`–`0` chord pads, `[` `]` down/up strum.
 - Phone: chord pads, ↓/↑ pads, or swipe across the strings (down the screen = downstroke). Tap the neck to fret a string.
 - Record captures the exact output to a 48 kHz WAV.

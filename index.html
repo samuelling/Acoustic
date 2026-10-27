@@ -216,13 +216,13 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <div class="row"><label for="humanize">Humanize</label><input id="humanize" type="range" min="0" max="100" value="60"><output id="humanizeOut">60</output></div>
       <div class="row"><label for="updepth">Upstroke reach</label><input id="updepth" type="range" min="0" max="100" value="55"><output id="updepthOut">55</output></div>
       <div class="row"><label for="gather">Chord window</label><input id="gather" type="range" min="5" max="60" value="18"><output id="gatherOut">18 ms</output></div>
+      <div class="row wide"><label for="legatoMode">Legato</label><select id="legatoMode"><option value="auto">Auto: hammer/pull close, slide wider</option><option value="slide">Slides</option><option value="hammer">Hammer-ons &amp; pull-offs</option><option value="off">Off (pick every note)</option></select></div>
       <div class="row"><label for="slidespeed">Slide speed</label><input id="slidespeed" type="range" min="0" max="100" value="50"><output id="slidespeedOut">—</output></div>
       <div class="row"><label for="fingernoise">Finger noise</label><input id="fingernoise" type="range" min="0" max="200" value="100"><output id="fingernoiseOut">100%</output></div>
       <div class="row"><label for="keyvel">Pad strength</label><input id="keyvel" type="range" min="10" max="100" value="72"><output id="keyvelOut">72</output></div>
       <div class="toggles">
         <button class="btn" id="letRing" aria-pressed="false" type="button">Let ring</button>
         <button class="btn" id="palm" aria-pressed="false" type="button">Palm mute</button>
-        <button class="btn" id="legato" aria-pressed="true" type="button" title="Overlapping single notes up to 7 semitones apart slide along the string">Legato slides</button>
       </div>
     </div>
 
@@ -294,7 +294,7 @@ details summary { cursor: pointer; font-family: var(--font-display); font-size: 
       <p><b>Measured directivity.</b> Close up, that geometry decides the sound. From a metre or more away, what you hear is set by how the whole instrument, and the person holding it, beams sound. That pattern comes from a real guitar played by a musician in an anechoic chamber, recorded from 32 directions at 2 m (Ackermann et al., TU Berlin). The synth was measured the same way and compared. The fix-ups it needed: the player's body takes about 6 dB off everything behind them from 250 Hz up, and the back of a real guitar is brighter than a simple shadow model. Distant mics, and every reflection that leaves the guitar into the room, now follow the measured pattern; close mics keep the geometry. Try “Behind the player”.</p>
       <p><b>The pick.</b> A pick is a little cantilever. For every pluck the synth works out where the string slips off its tip, from the pick's stiffness, its friction against the string, your attack angle and grip. That gives how far the string was pushed (loudness), which way (a flexing pick pushes it more into the top), and how fast it let go (brightness). Tip hardness is Hertz contact: a rubber or felt tip dents where it presses the string, so it touches more of it and lets go gently.</p>
       <p><b>The plucking hand.</b> In Pattern mode the hand plays the style the way a guitarist's fingers would. The thumb keeps the bass and the fingers their home strings. Timing has a slow drift of the whole hand plus a little scatter per note, matched to hexaphonic measurements of guitarists. Plucked chords spread over 10–25 ms in each player's habitual order. The ring finger is weakest and slightly late. Rest strokes land on the next string and damp it, and a careless follow-through sometimes grazes a neighbour. Rasgueado fans four nail sweeps over about 0.3 s. Lower the skill to hear a beginner.</p>
-      <p><b>The fretting hand.</b> The squeak of fingers on wound strings comes from the hand's movement, not from a sample. A fingertip sliding along a wound string catches on each wrap of the winding, so the squeak's pitch is the sliding speed divided by the winding pitch. That friction pushes along the string, through the bridge, into the body. The hand moves the way arms do (fast in the middle, slow at the ends), so a squeak rises and falls in pitch. Fingers drag as they leave a chord and the guide finger slides into the next one. Hold a note and press another a few frets away: the finger glides there, the pitch stepping fret by fret.</p>
+      <p><b>The fretting hand.</b> The squeak of fingers on wound strings comes from the hand's movement, not from a sample. A fingertip sliding along a wound string catches on each wrap of the winding, so the squeak's pitch is the sliding speed divided by the winding pitch. That friction pushes along the string, through the bridge, into the body. The hand moves the way arms do (fast in the middle, slow at the ends), so a squeak rises and falls in pitch. Fingers drag as they leave a chord and the guide finger slides into the next one. Hold a note and press another a few frets away: the finger glides there, the pitch stepping fret by fret. Closer notes become hammer-ons (the finger strikes the string onto the fret) and pull-offs (it plucks the string as it leaves).</p>
       <p><b>The room.</b> Reflections are traced by the image-source method: each wall bounce is attenuated per octave by its material, per ray by the direction it left the guitar (the measured pattern of a guitar in a player's arms) and by the direction it reaches the mic. A late tail follows, decaying per octave at the Eyring rate for the room's volume and surfaces, at the energy level room acoustics predicts, so moving the mics away naturally trades direct sound for room sound.</p>
       <p><b>Calibration.</b> Decay per harmonic, inharmonicity, brightness over time, beating depth, and strum timing and brightness were measured from recordings of real steel-string guitars, single notes and labeled down and up strums, and the model was checked against them.</p>
       <p><b>Hand.</b> Notes that arrive together become a chord, placed on the neck with a fingering search (span, barres, open strings, voice leading). A downstroke crosses the strings in about 35–55 ms, as measured strums do; upstrokes are quicker, catch mostly the treble strings, and come out slightly brighter. Direction follows a pendulum: the hand swings every subdivision, so the gap since your last chord decides down or up.</p>
@@ -1480,7 +1480,7 @@ class GuitarEngine {
     for (let c = 0; c < v.n; c++) {
       const f = v.w[c] / TAU;
       const sig = v.sig[c] + ex * (0.35 + f / 1000);
-      const r = Math.exp(-sig / sr);
+      const r = v.w[c] * dt < 0.92 * Math.PI * sr ? Math.exp(-sig / sr) : 0;   // a partial pushed past Nyquist by a shorter string falls silent
       v.c1[c] = 2 * r * Math.cos(v.w[c] * dt / sr);
       v.c2[c] = r * r;
     }
@@ -1527,6 +1527,8 @@ class GuitarEngine {
       case 'tap': this.tap(ev); break;
       case 'friction': this.friction(ev); break;
       case 'glide': this.glide(ev); break;
+      case 'hammer': this.legatoNote(ev, true); break;
+      case 'pulloff': this.legatoNote(ev, false); break;
       case 'fretstep': this.fretStep(ev); break;
       case 'squeak': this.squeak(ev); break;
       case 'bend': this.bendTarget = ev.value; break;
@@ -1872,6 +1874,53 @@ class GuitarEngine {
     for (const vv of st.voices) { vv.extraTarget = Math.max(vv.extraTarget, 2.5); vv.extraRate = 0.3; }
     this.friction({ s: ev.s, x0, x1, dur, seg: [0, 1], p0: ev.pressure ?? 0.8, p1: ev.pressure ?? 0.8, amt: 0.8, gam });
   }
+  // Hammer-on / pull-off. The ringing string keeps its motion and changes length at once (that is the legato).
+  //  hammer-on: the fretting finger strikes the string down onto a higher fret: a short, soft (fingertip, ~1.5 ms,
+  //    ~8 mm wide) push into the top, right at the new end of the vibrating length, and a knock of the fingertip on
+  //    the fretboard that reaches the body through the neck;
+  //  pull-off: the finger leaves by plucking the string sideways (along the top) where it was pressing - on the
+  //    now-longer string that point is close to the end: a thin, bright pluck.
+  // ev: s, from, to (midi), vel
+  legatoNote(ev, hammer) {
+    const st = this.strings[ev.s]; if (!st) return;
+    const v = st.v, vel = Math.max(0.05, Math.min(1, ev.vel ?? 0.6)), P = this.P;
+    const fOld = Math.round((ev.from ?? st.midi) - st.open), fNew = Math.round(ev.to - st.open);
+    if (fOld === fNew || fNew < 0) return;
+    if (!v.n) { this.loadModes(v, ev.s, st.open + fOld); }
+    v.shift = (v.shift || 0) + (fNew - fOld);
+    st.midi = st.open + fNew; st.fret = fNew; st.releaseAt = -1; v.live = true;
+    for (const vv of st.voices) if (vv === v) { vv.extraTarget = 0; vv.extraRate = 0.3; }
+    this.updateCoefs(v, true);
+    const Ls = P.scale * Math.pow(2, -fNew / 12);                  // the new vibrating length
+    const xf = (k) => P.scale * (1 - Math.pow(2, -k / 12));       // fret wire k from the nut
+    let d, h, tau, width, theta;
+    if (hammer) {
+      d = 0.003; h = 0.0006 * Math.pow(vel, 1.2); tau = 0.0015 * (1.3 - 0.5 * vel); width = 0.008; theta = 1.35;
+      // the fingertip knocks the fretboard
+      const at = this.clock & this.RMASK, n = Math.round(0.003 * this.sr), amp = 0.05 * vel;
+      for (let k = 0; k < n; k++) this.bodyIn[(at + k) & this.RMASK] += amp * Math.sin(Math.PI * (k + 0.5) / n);
+    } else {
+      const fingerX = xf(fOld) - 0.3 * (xf(fOld) - xf(Math.max(0, fOld - 1)));
+      d = Math.max(0.004, fingerX - xf(fNew)); h = 0.0021 * Math.pow(vel, 1.1); tau = 0.0005 * (1.3 - 0.5 * vel); width = 0.006; theta = 0.4;
+    }
+    // excite the voice's modes as a pluck at distance d from the stopping end of the new length
+    const L = v.L * Math.pow(2, -(v.shift || 0) / 12), xp = Math.min(0.5 * L, Math.max(0.002, d * L / Ls));
+    const ct = Math.cos(theta), sn = Math.sin(theta), dir = this.rng() < 0.5 ? 1 : -1;
+    const base = 2 * h * L * L / (Math.PI * Math.PI * xp * (L - xp)) * dir, dt = Math.pow(2, (v.shift || 0) / 12);
+    for (let c = 0; c < v.n;) {
+      const k = v.k[c];
+      let a = base * Math.sin(k * Math.PI * xp / L) / (k * k);
+      const sx = k * width / (2 * L); a *= sx > 1e-6 ? Math.sin(Math.PI * sx) / (Math.PI * sx) : 1;
+      const x = v.w[c] * dt * tau / 2.2; a /= Math.sqrt(1 + x * x * x * x);
+      if (v.single[c]) { this.addOsc(v, c, a); c += 1; continue; }
+      const y1 = v.vy[c], z1 = v.vz[c], y2 = v.vy[c + 1], z2 = v.vz[c + 1], det = y1 * z2 - y2 * z1;
+      let p1, p2;
+      if (Math.abs(det) > 1e-6) { p1 = (ct * z2 - sn * y2) / det; p2 = (sn * y1 - ct * z1) / det; } else { p1 = ct * y1 + sn * z1; p2 = 0; }
+      this.addOsc(v, c, a * p1); this.addOsc(v, c + 1, a * p2); c += 2;
+    }
+    this.rebuildActive(v);
+  }
+
   fretStep(ev) {
     const st = this.strings[ev.s]; if (!st) return;
     const v = st.v;
@@ -2838,7 +2887,7 @@ class StrumEngine {
     this.o = {
       mode: 'pick',          // 'pick' | 'finger' | 'pattern' (the right hand plays a style's pattern on held chords)
       style: 'travis', bpm: 96, skill: 0.6, brushes: 1,
-      legato: 'slide', slideSpeed: 1,   // slideSpeed: >1 faster slides, <1 slower (also MIDI CC5, portamento time)       // overlapping single notes up to 7 semitones apart: 'slide' along the string | 'off'
+      legato: 'auto', slideSpeed: 1,   // legato: 'auto' | 'slide' | 'hammer' (hammer-ons/pull-offs) | 'off'   // slideSpeed: >1 faster slides, <1 slower (also MIDI CC5, portamento time)       // overlapping single notes up to 7 semitones apart: 'slide' along the string | 'off'
       voicing: 'played',     // 'played' | 'guitarize'
       direction: 'auto',     // 'auto' | 'down' | 'up' | 'alternate'
       speed: 0.055,          // seconds for a 6-string stroke at medium velocity (measured strums: 26-62 ms)
@@ -2904,7 +2953,7 @@ class StrumEngine {
     const notes = this.pending; this.pending = [];
     if (!notes.length) return;
     // a note joined legato to the previous one, a few frets away: the finger slides there instead of plucking
-    if (notes.length === 1 && this.o.legato === 'slide' && this.tryGlide(notes[0])) return;
+    if (notes.length === 1 && (this.legatoForce || this.o.legato) !== 'off' && this.tryGlide(notes[0])) return;
     // a single note over a running pattern is melody, taken by the plucking fingers on a string of its own
     if (notes.length === 1 && this.o.mode === 'pattern' && this.hand && this.hand.running) {
       const n = notes[0], t0m = Math.max(this.now() + this.lookahead, n.t + this.o.gather * 0.5);
@@ -3157,14 +3206,30 @@ class StrumEngine {
     if (!held && !(ls.releasedAt >= 0 && this.now() - ls.releasedAt < 0.04)) return false;
     const open = this.open(), midi = this.fold(n.midi, open);
     const d = midi - ls.midi, fOld = ls.midi - open[ls.s], fNew = midi - open[ls.s];
-    if (d === 0 || Math.abs(d) > 7 || fOld < 1 || fNew < 1 || fNew > MAXFRET) return false;
-    const t = this.now() + 0.002, skill = clamp(this.o.skill ?? 0.6, 0, 1);
+    if (d === 0 || fNew < 0 || fNew > MAXFRET) return false;
+    const t = this.now() + 0.002, skill = clamp(this.o.skill ?? 0.6, 0, 1), vel = n.vel ?? 0.7;
+    // Which legato technique: a hammer-on (up) or pull-off (down) for a small interval within the hand's reach,
+    // a slide for a wider one. A soft legato note leans toward hammer/pull, a firm one toward sliding; the mode
+    // selector, the legato pedal (CC68) or keyswitches can force either.
+    const mode = this.legatoForce || this.o.legato || 'auto';
+    const canSlide = Math.abs(d) <= 7 && fOld >= 1 && fNew >= 1, canHP = Math.abs(d) <= 5;
+    const thr = clamp(4 + Math.round((0.5 - vel) * 4), 2, 6);
+    let tech = null;
+    if (mode === 'slide') tech = canSlide ? 'slide' : null;
+    else if (mode === 'hammer') tech = canHP ? 'hp' : canSlide ? 'slide' : null;
+    else tech = canHP && Math.abs(d) <= thr ? 'hp' : canSlide ? 'slide' : null;
+    if (!tech) return false;
+    if (tech === 'hp') {
+      this.send([{ type: d > 0 ? 'hammer' : 'pulloff', s: ls.s, from: ls.midi, to: midi, vel: clamp(vel * (1 + 0.08 * this.gaussN()), 0.05, 1), t }]);
+      this.ownLegato(ls, n, midi, fNew);
+      return true;
+    }
     // How long the slide takes:
     //  - distance: longer slides take longer but cover ground faster (Fitts-like: ~log of the distance)
     //  - how hard the new note is pressed: a firm press snaps there, a soft one drifts
     //  - the player's chosen speed (slider / CC5), and in a running pattern the beat (slides scale with tempo)
     //  - natural spread from slide to slide (log-normal, wider for a weaker player)
-    const vel = n.vel ?? 0.7, hum = (this.o.humanize ?? 0.6) / 0.6;
+    const hum = (this.o.humanize ?? 0.6) / 0.6;
     // (GuitarSet's 437 recorded slides: median 168 ms for a median 2.5 frets, 10-90% 70-325 ms)
     let dur = 0.9 * (0.055 + 0.075 * Math.log2(1 + Math.abs(d))) * (1.7 - 1.15 * vel) / Math.max(0.2, this.o.slideSpeed || 1);
     if (this.hand && this.hand.running) dur *= clamp(96 / (this.o.bpm || 96), 0.6, 1.5);
@@ -3173,7 +3238,11 @@ class StrumEngine {
     // where in the move the hand is fastest: a quick snap rushes early and coasts in; a lazy slide starts slowly
     const skew = clamp(0.5 + 0.18 * (0.6 - vel) + 0.08 * this.gaussN() * hum, 0.33, 0.67);
     this.send([{ type: 'glide', s: ls.s, from: ls.midi, to: midi, dur, skew, pressure: clamp(0.45 + 0.45 * vel + 0.1 * this.gaussN(), 0.3, 1), t }]);
-    // the new key now owns the string; the old key's release no longer stops it
+    this.ownLegato(ls, n, midi, fNew);
+    return true;
+  }
+  // after a legato move the new key owns the string; the old key's release no longer stops it
+  ownLegato(ls, n, midi, fNew) {
     if (ls.melody && this.hand) {
       this.melodyKeys.delete(ls.key); this.melodyKeys.set(n.midi, ls.s); this.hand.melody.set(ls.s, midi);
     } else {
@@ -3184,7 +3253,6 @@ class StrumEngine {
     }
     this.lastSingle = { key: n.midi, midi, s: ls.s, releasedAt: -1, melody: ls.melody };
     this.handPos = Math.max(0, fNew - 1);
-    return true;
   }
 
   // ----- direct control (chord pads and the string swipe area) -----
@@ -3572,12 +3640,13 @@ function applyPick() {
   const r = M(P[pick.type] || P.cell71, 72, 0.645, 0.13, 0.7, pick.angle, pick.grip, pick.Es), r0 = M(P.cell71, 72, 0.645, 0.13, 0.7, 20, 'normal');
   strum.set({ pickHold: Math.max(0.5, Math.min(1.6, r.hold / r0.hold)) });
 }
+// legato: overlapping single notes become hammer-ons, pull-offs or slides (see StrumEngine.tryGlide)
+function setLegato(m) { $('legatoMode').value = m; strum.set({ legato: m }); store.set('o.legatoMode', m); }
 function bindLegato() {
-  const b = $('legato'), on0 = store.get('o.legatoSlide', true);
-  const set = (on) => { b.setAttribute('aria-pressed', on); strum.set({ legato: on ? 'slide' : 'off' }); store.set('o.legatoSlide', on); };
-  b.addEventListener('click', () => set(b.getAttribute('aria-pressed') !== 'true'));
-  set(on0);
+  $('legatoMode').addEventListener('change', () => setLegato($('legatoMode').value));
+  setLegato(store.get('o.legatoMode', 'auto'));
 }
+const KEYSWITCH = { 24: 'auto', 25: 'slide', 26: 'hammer', 27: 'off' };   // C1, C#1, D1, D#1
 function bindHandStyle() {
   fillSelect('handStyle', Object.entries(HAND_STYLES).map(([k, v]) => [k, v.name]), store.get('o.style', 'travis'));
   strum.set({ style: $('handStyle').value });
@@ -3870,13 +3939,15 @@ function onMidi(e) {
   const [st, d1, d2] = e.data; const cmd = st & 0xf0;
   if (st >= 0xf8) { onClock(st, e.timeStamp); return; }
   const t = ctx ? ctx.currentTime + Math.min(0, (e.timeStamp - performance.now()) / 1000) : undefined;
+  if ((cmd === 0x90 || cmd === 0x80) && KEYSWITCH[d1]) { if (cmd === 0x90 && d2 > 0) setLegato(KEYSWITCH[d1]); return; }   // keyswitches
   if (cmd === 0x90 && d2 > 0) { start(); noteOn(d1, Math.pow(d2 / 127, 0.9), t); }
   else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) noteOff(d1);
   else if (cmd === 0xb0) {
     if (d1 === 64) strum.setSustain(d2 >= 64);
     else if (d1 === 2) { const v = Math.round(d2 / 127 * 200); $('fingernoise').value = v; $('fingernoiseOut').textContent = v + '%'; setEngine({ fingerAmt: v / 100 }); }   // breath: finger-noise level
     else if (d1 === 5) { const v = Math.round(100 - d2 / 127 * 100); $('slidespeed').value = v; sliders.slidespeed.apply(v); $('slidespeedOut').textContent = sliders.slidespeed.out(v); }   // portamento time
-    else if (d1 === 65) { const on = d2 >= 64; strum.set({ legato: on ? 'slide' : 'off' }); $('legato').setAttribute('aria-pressed', on); }   // portamento on/off
+    else if (d1 === 65) setLegato(d2 >= 64 ? 'auto' : 'off');   // portamento on/off
+    else if (d1 === 68) strum.legatoForce = d2 >= 64 ? 'slide' : null;   // legato pedal: slide while held
     else if (d1 === 67) { strum.set({ palm: d2 >= 64 }); $('palm').setAttribute('aria-pressed', d2 >= 64); }
     else if (d1 === 1) { const ms = Math.round(12 + (d2 / 127) * 70); $('speed').value = ms; $('speedOut').textContent = ms + ' ms'; strum.set({ speed: ms / 1000 }); }
     else if (d1 === 123 || d1 === 120) strum.allOff();

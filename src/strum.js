@@ -186,7 +186,7 @@ class StrumEngine {
     this.o = {
       mode: 'pick',          // 'pick' | 'finger' | 'pattern' (the right hand plays a style's pattern on held chords)
       style: 'travis', bpm: 96, skill: 0.6, brushes: 1,
-      legato: 'slide', slideSpeed: 1,   // slideSpeed: >1 faster slides, <1 slower (also MIDI CC5, portamento time)       // overlapping single notes up to 7 semitones apart: 'slide' along the string | 'off'
+      legato: 'auto', slideSpeed: 1,   // legato: 'auto' | 'slide' | 'hammer' (hammer-ons/pull-offs) | 'off'   // slideSpeed: >1 faster slides, <1 slower (also MIDI CC5, portamento time)       // overlapping single notes up to 7 semitones apart: 'slide' along the string | 'off'
       voicing: 'played',     // 'played' | 'guitarize'
       direction: 'auto',     // 'auto' | 'down' | 'up' | 'alternate'
       speed: 0.055,          // seconds for a 6-string stroke at medium velocity (measured strums: 26-62 ms)
@@ -252,7 +252,7 @@ class StrumEngine {
     const notes = this.pending; this.pending = [];
     if (!notes.length) return;
     // a note joined legato to the previous one, a few frets away: the finger slides there instead of plucking
-    if (notes.length === 1 && this.o.legato === 'slide' && this.tryGlide(notes[0])) return;
+    if (notes.length === 1 && (this.legatoForce || this.o.legato) !== 'off' && this.tryGlide(notes[0])) return;
     // a single note over a running pattern is melody, taken by the plucking fingers on a string of its own
     if (notes.length === 1 && this.o.mode === 'pattern' && this.hand && this.hand.running) {
       const n = notes[0], t0m = Math.max(this.now() + this.lookahead, n.t + this.o.gather * 0.5);
@@ -505,14 +505,30 @@ class StrumEngine {
     if (!held && !(ls.releasedAt >= 0 && this.now() - ls.releasedAt < 0.04)) return false;
     const open = this.open(), midi = this.fold(n.midi, open);
     const d = midi - ls.midi, fOld = ls.midi - open[ls.s], fNew = midi - open[ls.s];
-    if (d === 0 || Math.abs(d) > 7 || fOld < 1 || fNew < 1 || fNew > MAXFRET) return false;
-    const t = this.now() + 0.002, skill = clamp(this.o.skill ?? 0.6, 0, 1);
+    if (d === 0 || fNew < 0 || fNew > MAXFRET) return false;
+    const t = this.now() + 0.002, skill = clamp(this.o.skill ?? 0.6, 0, 1), vel = n.vel ?? 0.7;
+    // Which legato technique: a hammer-on (up) or pull-off (down) for a small interval within the hand's reach,
+    // a slide for a wider one. A soft legato note leans toward hammer/pull, a firm one toward sliding; the mode
+    // selector, the legato pedal (CC68) or keyswitches can force either.
+    const mode = this.legatoForce || this.o.legato || 'auto';
+    const canSlide = Math.abs(d) <= 7 && fOld >= 1 && fNew >= 1, canHP = Math.abs(d) <= 5;
+    const thr = clamp(4 + Math.round((0.5 - vel) * 4), 2, 6);
+    let tech = null;
+    if (mode === 'slide') tech = canSlide ? 'slide' : null;
+    else if (mode === 'hammer') tech = canHP ? 'hp' : canSlide ? 'slide' : null;
+    else tech = canHP && Math.abs(d) <= thr ? 'hp' : canSlide ? 'slide' : null;
+    if (!tech) return false;
+    if (tech === 'hp') {
+      this.send([{ type: d > 0 ? 'hammer' : 'pulloff', s: ls.s, from: ls.midi, to: midi, vel: clamp(vel * (1 + 0.08 * this.gaussN()), 0.05, 1), t }]);
+      this.ownLegato(ls, n, midi, fNew);
+      return true;
+    }
     // How long the slide takes:
     //  - distance: longer slides take longer but cover ground faster (Fitts-like: ~log of the distance)
     //  - how hard the new note is pressed: a firm press snaps there, a soft one drifts
     //  - the player's chosen speed (slider / CC5), and in a running pattern the beat (slides scale with tempo)
     //  - natural spread from slide to slide (log-normal, wider for a weaker player)
-    const vel = n.vel ?? 0.7, hum = (this.o.humanize ?? 0.6) / 0.6;
+    const hum = (this.o.humanize ?? 0.6) / 0.6;
     // (GuitarSet's 437 recorded slides: median 168 ms for a median 2.5 frets, 10-90% 70-325 ms)
     let dur = 0.9 * (0.055 + 0.075 * Math.log2(1 + Math.abs(d))) * (1.7 - 1.15 * vel) / Math.max(0.2, this.o.slideSpeed || 1);
     if (this.hand && this.hand.running) dur *= clamp(96 / (this.o.bpm || 96), 0.6, 1.5);
@@ -521,7 +537,11 @@ class StrumEngine {
     // where in the move the hand is fastest: a quick snap rushes early and coasts in; a lazy slide starts slowly
     const skew = clamp(0.5 + 0.18 * (0.6 - vel) + 0.08 * this.gaussN() * hum, 0.33, 0.67);
     this.send([{ type: 'glide', s: ls.s, from: ls.midi, to: midi, dur, skew, pressure: clamp(0.45 + 0.45 * vel + 0.1 * this.gaussN(), 0.3, 1), t }]);
-    // the new key now owns the string; the old key's release no longer stops it
+    this.ownLegato(ls, n, midi, fNew);
+    return true;
+  }
+  // after a legato move the new key owns the string; the old key's release no longer stops it
+  ownLegato(ls, n, midi, fNew) {
     if (ls.melody && this.hand) {
       this.melodyKeys.delete(ls.key); this.melodyKeys.set(n.midi, ls.s); this.hand.melody.set(ls.s, midi);
     } else {
@@ -532,7 +552,6 @@ class StrumEngine {
     }
     this.lastSingle = { key: n.midi, midi, s: ls.s, releasedAt: -1, melody: ls.melody };
     this.handPos = Math.max(0, fNew - 1);
-    return true;
   }
 
   // ----- direct control (chord pads and the string swipe area) -----

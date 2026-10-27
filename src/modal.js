@@ -628,7 +628,7 @@ class GuitarEngine {
     for (let c = 0; c < v.n; c++) {
       const f = v.w[c] / TAU;
       const sig = v.sig[c] + ex * (0.35 + f / 1000);
-      const r = Math.exp(-sig / sr);
+      const r = v.w[c] * dt < 0.92 * Math.PI * sr ? Math.exp(-sig / sr) : 0;   // a partial pushed past Nyquist by a shorter string falls silent
       v.c1[c] = 2 * r * Math.cos(v.w[c] * dt / sr);
       v.c2[c] = r * r;
     }
@@ -675,6 +675,8 @@ class GuitarEngine {
       case 'tap': this.tap(ev); break;
       case 'friction': this.friction(ev); break;
       case 'glide': this.glide(ev); break;
+      case 'hammer': this.legatoNote(ev, true); break;
+      case 'pulloff': this.legatoNote(ev, false); break;
       case 'fretstep': this.fretStep(ev); break;
       case 'squeak': this.squeak(ev); break;
       case 'bend': this.bendTarget = ev.value; break;
@@ -1020,6 +1022,53 @@ class GuitarEngine {
     for (const vv of st.voices) { vv.extraTarget = Math.max(vv.extraTarget, 2.5); vv.extraRate = 0.3; }
     this.friction({ s: ev.s, x0, x1, dur, seg: [0, 1], p0: ev.pressure ?? 0.8, p1: ev.pressure ?? 0.8, amt: 0.8, gam });
   }
+  // Hammer-on / pull-off. The ringing string keeps its motion and changes length at once (that is the legato).
+  //  hammer-on: the fretting finger strikes the string down onto a higher fret: a short, soft (fingertip, ~1.5 ms,
+  //    ~8 mm wide) push into the top, right at the new end of the vibrating length, and a knock of the fingertip on
+  //    the fretboard that reaches the body through the neck;
+  //  pull-off: the finger leaves by plucking the string sideways (along the top) where it was pressing - on the
+  //    now-longer string that point is close to the end: a thin, bright pluck.
+  // ev: s, from, to (midi), vel
+  legatoNote(ev, hammer) {
+    const st = this.strings[ev.s]; if (!st) return;
+    const v = st.v, vel = Math.max(0.05, Math.min(1, ev.vel ?? 0.6)), P = this.P;
+    const fOld = Math.round((ev.from ?? st.midi) - st.open), fNew = Math.round(ev.to - st.open);
+    if (fOld === fNew || fNew < 0) return;
+    if (!v.n) { this.loadModes(v, ev.s, st.open + fOld); }
+    v.shift = (v.shift || 0) + (fNew - fOld);
+    st.midi = st.open + fNew; st.fret = fNew; st.releaseAt = -1; v.live = true;
+    for (const vv of st.voices) if (vv === v) { vv.extraTarget = 0; vv.extraRate = 0.3; }
+    this.updateCoefs(v, true);
+    const Ls = P.scale * Math.pow(2, -fNew / 12);                  // the new vibrating length
+    const xf = (k) => P.scale * (1 - Math.pow(2, -k / 12));       // fret wire k from the nut
+    let d, h, tau, width, theta;
+    if (hammer) {
+      d = 0.003; h = 0.0006 * Math.pow(vel, 1.2); tau = 0.0015 * (1.3 - 0.5 * vel); width = 0.008; theta = 1.35;
+      // the fingertip knocks the fretboard
+      const at = this.clock & this.RMASK, n = Math.round(0.003 * this.sr), amp = 0.05 * vel;
+      for (let k = 0; k < n; k++) this.bodyIn[(at + k) & this.RMASK] += amp * Math.sin(Math.PI * (k + 0.5) / n);
+    } else {
+      const fingerX = xf(fOld) - 0.3 * (xf(fOld) - xf(Math.max(0, fOld - 1)));
+      d = Math.max(0.004, fingerX - xf(fNew)); h = 0.0021 * Math.pow(vel, 1.1); tau = 0.0005 * (1.3 - 0.5 * vel); width = 0.006; theta = 0.4;
+    }
+    // excite the voice's modes as a pluck at distance d from the stopping end of the new length
+    const L = v.L * Math.pow(2, -(v.shift || 0) / 12), xp = Math.min(0.5 * L, Math.max(0.002, d * L / Ls));
+    const ct = Math.cos(theta), sn = Math.sin(theta), dir = this.rng() < 0.5 ? 1 : -1;
+    const base = 2 * h * L * L / (Math.PI * Math.PI * xp * (L - xp)) * dir, dt = Math.pow(2, (v.shift || 0) / 12);
+    for (let c = 0; c < v.n;) {
+      const k = v.k[c];
+      let a = base * Math.sin(k * Math.PI * xp / L) / (k * k);
+      const sx = k * width / (2 * L); a *= sx > 1e-6 ? Math.sin(Math.PI * sx) / (Math.PI * sx) : 1;
+      const x = v.w[c] * dt * tau / 2.2; a /= Math.sqrt(1 + x * x * x * x);
+      if (v.single[c]) { this.addOsc(v, c, a); c += 1; continue; }
+      const y1 = v.vy[c], z1 = v.vz[c], y2 = v.vy[c + 1], z2 = v.vz[c + 1], det = y1 * z2 - y2 * z1;
+      let p1, p2;
+      if (Math.abs(det) > 1e-6) { p1 = (ct * z2 - sn * y2) / det; p2 = (sn * y1 - ct * z1) / det; } else { p1 = ct * y1 + sn * z1; p2 = 0; }
+      this.addOsc(v, c, a * p1); this.addOsc(v, c + 1, a * p2); c += 2;
+    }
+    this.rebuildActive(v);
+  }
+
   fretStep(ev) {
     const st = this.strings[ev.s]; if (!st) return;
     const v = st.v;
