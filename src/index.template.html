@@ -56,7 +56,7 @@
       <div class="row wide"><label>Technique</label><div class="seg" data-opt="mode"><button data-v="pick">Pick strum</button><button data-v="finger">Fingerstyle</button></div></div>
       <div class="row wide"><label>Voicing</label><div class="seg" data-opt="voicing"><button data-v="played">As played</button><button data-v="guitarize">Guitar shape</button></div></div>
       <div class="row wide"><label>Direction</label><div class="seg" data-opt="direction"><button data-v="auto">Auto</button><button data-v="down">Down</button><button data-v="up">Up</button><button data-v="alternate">Alternate</button></div></div>
-      <div class="row"><label for="speed">Stroke time</label><input id="speed" type="range" min="10" max="90" step="1" value="35"><output id="speedOut">35 ms</output></div>
+      <div class="row"><label for="speed">Stroke time</label><input id="speed" type="range" min="15" max="110" step="1" value="55"><output id="speedOut">55 ms</output></div>
       <div class="row"><label for="humanize">Humanize</label><input id="humanize" type="range" min="0" max="100" value="60"><output id="humanizeOut">60</output></div>
       <div class="row"><label for="updepth">Upstroke reach</label><input id="updepth" type="range" min="0" max="100" value="55"><output id="updepthOut">55</output></div>
       <div class="row"><label for="gather">Chord window</label><input id="gather" type="range" min="5" max="60" value="18"><output id="gatherOut">18 ms</output></div>
@@ -69,7 +69,7 @@
 
     <div class="group">
       <h2>Instrument</h2>
-      <p class="hint">Every sound here is computed from strings, a pick and a wooden box. Nothing is sampled.</p>
+      <p class="hint">Every sound is computed from strings, a pick, a bridge and a wooden box. Nothing is sampled.</p>
       <div class="row wide"><label for="preset">Guitar</label>
         <select id="preset"><option value="dreadnought">Steel-string dreadnought</option><option value="parlor">Steel-string parlor</option><option value="classical">Nylon classical</option></select></div>
       <div class="row wide"><label for="tuning">Tuning</label>
@@ -104,11 +104,12 @@
   <section class="group science">
     <details>
       <summary>How the sound is made</summary>
-      <p><b>Strings.</b> Each of the six strings is a digital waveguide: a delay line one period long that a wave runs around, losing a little energy and treble on every trip. Two waveguides per string model the two directions a string can swing. The one pushing into the soundboard drains fast and makes the bright attack; the one parallel to the top rings on. Their slight tuning difference gives real guitars their slow beating.</p>
-      <p><b>Pick.</b> The excitation is a force pulse whose length depends on where you pick along the string, which cuts out the harmonics that have a node there. Harder strokes give a sharper pulse and a brighter attack, and a hard pluck briefly raises string tension, so the note starts a few cents sharp and settles.</p>
-      <p><b>Body.</b> The strings drive a bank of resonant modes: the air resonance near 100 Hz, the top-plate pair near 190 and 205 Hz, then dozens of denser, weaker modes up to 7 kHz, heard from two mic positions. Below the air resonance the top and the soundhole cancel, so the low E fundamental is quieter than its overtones, as on a real guitar. Undamped strings pick up energy through the bridge and ring sympathetically.</p>
-      <p><b>Calibration.</b> Decay times per harmonic, inharmonicity and the brightness curve over time were fitted against recordings of real steel-string guitar notes.</p>
-      <p><b>Hand.</b> Notes that arrive together become a chord, placed on the neck with a fingering search (span, barres, open strings, voice leading). A pick stroke reaches the strings in order with timing set by velocity, string gauge and a little human scatter. Strum direction follows a pendulum: the hand swings every subdivision, so the gap since your last chord decides whether this one is a down or an upstroke.</p>
+      <p><b>Strings.</b> Each string is the sum of its own vibration modes, two per harmonic, one for each direction the string can swing. A mode's pitch includes the stretch from the string's bending stiffness; its decay comes from measured string losses (Woodhouse's model for bronze and nylon strings, with older strings losing more treble).</p>
+      <p><b>Bridge.</b> The string's energy leaks into the guitar through the bridge, and how fast depends on how easily the bridge moves at that exact frequency. A harmonic that lands on a body resonance drains in a fraction of a second; one that lands between resonances rings for many seconds. The bridge also pulls each harmonic's pitch slightly and moves differently along and across the top, so the two swing directions split by a fraction of a hertz to a few hertz and beat. That is why every harmonic decays at its own rate, fades, comes back, and crosses its neighbors, which is most of what makes a real note sound alive.</p>
+      <p><b>Body.</b> The same body drives the sound: an air resonance near 100 Hz, the top plate pair near 195 and 205 Hz, dipole modes that radiate less, then hundreds of denser modes spaced about 38 Hz apart up to 9 kHz, each moving the bridge at its own angle (Woodhouse's statistical model, scaled to measured guitar admittance, about −45 dB re 1 m/Ns). Two mic positions hear the modes with different weights.</p>
+      <p><b>Pick.</b> The pick pushes the string sideways, scrapes along it for a few milliseconds, then slips off. The pluck point carves notches into the harmonic series, the pick width and slip time set the brightness, and the push direction sets the balance of the two swing directions. While loaded, the string presses the bridge sideways; that force vanishes at release, kicking the body's air and top modes — the soft thump under every note. Hard plucks briefly raise string tension, so notes start a few cents sharp, and they excite the string's lengthwise resonances (around 1.4 kHz on the low E), part of a steel string's metallic edge.</p>
+      <p><b>Calibration.</b> Decay per harmonic, inharmonicity, brightness over time, beating depth, and strum timing and brightness were measured from recordings of real steel-string guitars, single notes and labeled down and up strums, and the model was checked against them.</p>
+      <p><b>Hand.</b> Notes that arrive together become a chord, placed on the neck with a fingering search (span, barres, open strings, voice leading). A downstroke crosses the strings in about 35–55 ms, as measured strums do; upstrokes are quicker, catch mostly the treble strings, and come out slightly brighter. Direction follows a pendulum: the hand swings every subdivision, so the gap since your last chord decides down or up.</p>
     </details>
   </section>
 </div>

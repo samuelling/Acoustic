@@ -21,50 +21,70 @@
 const TAU = Math.PI * 2;
 
 // ---------------- instrument data ----------------
-// strings: [tension N at standard pitch, outer diameter m, core diameter m, wound]
+// strings (low E first): T newtons at standard pitch, mu kg/m, EI N m^2, wound,
+//   Woodhouse damping: etaF (string friction), etaB new / used (bending loss; dirt in old windings raises it),
+//   etaA (air, per rad/s), EA axial stiffness N
+// Steel: D'Addario EJ16 tensions and unit weights; damping and EI from Woodhouse et al. 2012 (80/20 bronze).
+// Nylon: D'Addario EJ45 normal tension; damping and inharmonicity from Woodhouse et al. 2012 (Pro Arte).
 const PRESETS = {
   dreadnought: {
-    name: 'Steel dreadnought', scale: 0.645, E: 2.0e11, rho: 7850,
-    strings: [[107, 0.00135, 0.00043, 1], [125, 0.00107, 0.00038, 1], [132, 0.00081, 0.00033, 1],
-              [132, 0.00061, 0.00028, 1], [103, 0.00041, 0.00041, 0], [103, 0.000305, 0.000305, 0]],
-    damp: { veWound: 0.012, vePlain: 0.0025, teWound: 0.5e-4, tePlain: 2.0e-4, fretted: 0.25 },
+    name: 'Steel dreadnought', scale: 0.645,
+    strings: [
+      { T: 111, mu: 10.18e-3, EI: 534e-6, wound: 1, etaF: 5e-5, etaBn: 0.3e-2, etaBu: 3.8e-2, etaA: 1.7, EA: 29000 },
+      { T: 129, mu: 6.554e-3, EI: 262e-6, wound: 1, etaF: 11e-5, etaBn: 0.4e-2, etaBu: 2.9e-2, etaA: 1.2, EA: 22700 },
+      { T: 133, mu: 3.750e-3, EI: 204e-6, wound: 1, etaF: 9e-5, etaBn: 1.1e-2, etaBu: 4.1e-2, etaA: 1.3, EA: 17100 },
+      { T: 134, mu: 2.089e-3, EI: 187e-6, wound: 1, etaF: 11e-5, etaBn: 1.8e-2, etaBu: 6.8e-2, etaA: 1.2, EA: 12300 },
+      { T: 104, mu: 1.018e-3, EI: 267e-6, wound: 0, etaF: 6e-5, etaBn: 1.1e-2, etaBu: 1.1e-2, etaA: 1.0, EA: 25900 },
+      { T: 104, mu: 0.572e-3, EI: 85e-6, wound: 0, etaF: 7e-5, etaBn: 0.7e-2, etaBu: 0.7e-2, etaA: 2.5, EA: 14600 }],
+    damp: { fretted: 0.25 }, polDetune: 0.0016, airScale: 0.75, plainEtaF: 3.6e-4,
     body: {
-      // f Hz, Q, effective mass kg at the bridge (z), radiation weight
-      modes: [[100, 18, 0.9, 1.0], [188, 25, 0.105, 0.8], [204, 25, 0.18, 0.7], [245, 30, 0.45, 0.3],
-              [290, 30, 0.38, 0.3], [380, 35, 0.22, 0.4], [420, 35, 0.3, 0.3], [505, 40, 0.22, 0.3],
-              [590, 40, 0.3, 0.25], [680, 40, 0.3, 0.25], [765, 40, 0.38, 0.2], [880, 45, 0.38, 0.2]],
-      hf: { f0: 950, f1: 9000, count: 64, qlo: 30, qhi: 80, mlo: 0.8, mhi: 4.0, g: 0.15 },
-      inplane: 0.25, cross: 0.35, gy: 0.3, seed: 3
+      // f Hz, Q, effective mass kg normal to the top at the bridge, bridge-motion angle deg, radiation (1 monopole, small for dipoles)
+      // Steel-string data: Russell (Hummingbird 103/188/203 Hz), Popp & Rossing (D-28: 102, 193-204 monopoles,
+      // 376 dipole, 436 quadrupole); masses from mass-loading studies (Christensen; Iulius), Woodhouse 2004.
+      modes: [[100, 26, 0.6, 2, 0.4], [193, 32, 0.19, 6, 1.0], [204, 34, 0.24, -8, 0.9], [228, 40, 0.42, 14, 0.5],
+              [292, 34, 0.7, 28, 0.55], [376, 36, 0.6, 32, 0.5], [436, 36, 0.8, -30, 0.45]],
+      // above ~480 Hz: statistical modes (Woodhouse): Rayleigh spacing, uniform Q, log-normal masses
+      hf: { f0: 480, f1: 9500, spacing: 38, qlo: 30, qhi: 80, mMed: 2.4, mSpread: 0.9, angSd: 30, seed: 3 },
+      radFc: 250
     },
-    radHP: 88, air: 11000, out: 9.0, lonQ: 350, lonGain: 0.02
+    radHP: 88, air: 11000, out: 9.0, lonQ: 350, lonGain: 0.05
   },
   parlor: {
-    name: 'Steel parlor', scale: 0.62, E: 2.0e11, rho: 7850,
-    strings: [[99, 0.00135, 0.00043, 1], [116, 0.00107, 0.00038, 1], [122, 0.00081, 0.00033, 1],
-              [122, 0.00061, 0.00028, 1], [95, 0.00041, 0.00041, 0], [95, 0.000305, 0.000305, 0]],
-    damp: { veWound: 0.012, vePlain: 0.0025, teWound: 0.5e-4, tePlain: 2.0e-4, fretted: 0.25 },
+    name: 'Steel parlor', scale: 0.62,
+    strings: [
+      { T: 103, mu: 10.18e-3, EI: 534e-6, wound: 1, etaF: 5e-5, etaBn: 0.3e-2, etaBu: 3.8e-2, etaA: 1.7, EA: 29000 },
+      { T: 119, mu: 6.554e-3, EI: 262e-6, wound: 1, etaF: 11e-5, etaBn: 0.4e-2, etaBu: 2.9e-2, etaA: 1.2, EA: 22700 },
+      { T: 123, mu: 3.750e-3, EI: 204e-6, wound: 1, etaF: 9e-5, etaBn: 1.1e-2, etaBu: 4.1e-2, etaA: 1.3, EA: 17100 },
+      { T: 124, mu: 2.089e-3, EI: 187e-6, wound: 1, etaF: 11e-5, etaBn: 1.8e-2, etaBu: 6.8e-2, etaA: 1.2, EA: 12300 },
+      { T: 96, mu: 1.018e-3, EI: 267e-6, wound: 0, etaF: 6e-5, etaBn: 1.1e-2, etaBu: 1.1e-2, etaA: 1.0, EA: 25900 },
+      { T: 96, mu: 0.572e-3, EI: 85e-6, wound: 0, etaF: 7e-5, etaBn: 0.7e-2, etaBu: 0.7e-2, etaA: 2.5, EA: 14600 }],
+    damp: { fretted: 0.25 }, polDetune: 0.0016, airScale: 0.75, plainEtaF: 3.6e-4,
     body: {
-      modes: [[124, 15, 0.8, 0.8], [225, 22, 0.1, 0.85], [246, 22, 0.16, 0.65], [300, 28, 0.4, 0.3],
-              [352, 28, 0.32, 0.35], [440, 32, 0.22, 0.4], [492, 32, 0.28, 0.3], [578, 36, 0.24, 0.3],
-              [690, 36, 0.3, 0.25], [790, 40, 0.34, 0.22], [905, 42, 0.36, 0.2]],
-      hf: { f0: 1000, f1: 9000, count: 60, qlo: 30, qhi: 75, mlo: 0.7, mhi: 3.6, g: 0.15 },
-      inplane: 0.25, cross: 0.35, gy: 0.3, seed: 5
+      modes: [[118, 22, 0.5, 2, 0.45], [214, 30, 0.17, 6, 1.0], [230, 32, 0.22, -8, 0.9], [262, 38, 0.38, 14, 0.5],
+              [330, 34, 0.6, 28, 0.55], [415, 36, 0.55, 32, 0.5], [480, 36, 0.7, -30, 0.45]],
+      hf: { f0: 520, f1: 9500, spacing: 44, qlo: 30, qhi: 80, mMed: 2.2, mSpread: 0.9, angSd: 30, seed: 5 },
+      radFc: 290
     },
-    radHP: 108, air: 11000, out: 10.0, lonQ: 350, lonGain: 0.02
+    radHP: 108, air: 11000, out: 10.0, lonQ: 350, lonGain: 0.05
   },
   classical: {
-    name: 'Nylon classical', scale: 0.65, E: 4.0e9, rho: 1140,
-    strings: [[71, 0.00110, 0.00055, 1], [72, 0.00089, 0.00045, 1], [70, 0.00075, 0.00038, 1],
-              [58, 0.00102, 0.00102, 0], [61, 0.00082, 0.00082, 0], [70, 0.00071, 0.00071, 0]],
-    damp: { veWound: 0.06, vePlain: 0.02, teWound: 0, tePlain: 0, fretted: 0.25, woundCoreE: 0.3 },
+    name: 'Nylon classical', scale: 0.65,
+    strings: [
+      { T: 63.1, mu: 5.50e-3, EI: 52e-6, wound: 1, etaF: 2e-5, etaBn: 2.0e-2, etaBu: 3.0e-2, etaA: 1.2, EA: 1500 },
+      { T: 70.7, mu: 3.46e-3, EI: 39e-6, wound: 1, etaF: 7e-5, etaBn: 2.5e-2, etaBu: 3.5e-2, etaA: 0.9, EA: 1200 },
+      { T: 69.4, mu: 1.91e-3, EI: 51e-6, wound: 1, etaF: 5e-5, etaBn: 2.0e-2, etaBu: 3.0e-2, etaA: 1.2, EA: 1000 },
+      { T: 52.9, mu: 0.82e-3, EI: 280e-6, wound: 0, etaF: 14e-5, etaBn: 2.0e-2, etaBu: 2.4e-2, etaA: 1.7, EA: 9500 },
+      { T: 53.5, mu: 0.52e-3, EI: 159e-6, wound: 0, etaF: 40e-5, etaBn: 2.0e-2, etaBu: 2.4e-2, etaA: 1.2, EA: 6900 },
+      { T: 72.2, mu: 0.39e-3, EI: 131e-6, wound: 0, etaF: 40e-5, etaBn: 2.4e-2, etaBu: 2.8e-2, etaA: 1.5, EA: 5700 }],
+    damp: { fretted: 0.25 }, polDetune: 0.002, airScale: 0.6, plainEtaF: 0,
     body: {
-      modes: [[96, 14, 0.7, 1.0], [112, 18, 1.2, 0.3], [198, 20, 0.08, 0.85], [228, 20, 0.14, 0.6],
-              [272, 25, 0.4, 0.3], [395, 26, 0.24, 0.38], [445, 28, 0.3, 0.3], [540, 30, 0.3, 0.28],
-              [640, 32, 0.34, 0.24], [745, 34, 0.38, 0.2], [850, 36, 0.4, 0.18]],
-      hf: { f0: 950, f1: 8000, count: 60, qlo: 25, qhi: 60, mlo: 0.7, mhi: 4.0, g: 0.14 },
-      inplane: 0.25, cross: 0.35, gy: 0.3, seed: 7
+      // Woodhouse 2004 classical guitar fit: 91 Hz Q25, 205 Hz Q47, 225 Hz Q59; masses from his admittance peaks
+      modes: [[91, 25, 0.6, 2, 0.45], [205, 45, 0.13, 6, 1.0], [225, 55, 0.38, -10, 0.8], [280, 25, 0.6, 30, 0.55],
+              [420, 40, 1.0, -28, 0.45]],
+      hf: { f0: 470, f1: 8500, spacing: 38, qlo: 30, qhi: 80, mMed: 2.8, mSpread: 0.9, angSd: 30, seed: 7 },
+      radFc: 250
     },
-    radHP: 85, air: 10000, out: 14.0, lonQ: 120, lonGain: 0.004
+    radHP: 85, air: 10000, out: 14.0, lonQ: 120, lonGain: 0.02
   }
 };
 const STD = [40, 45, 50, 55, 59, 64];
@@ -78,42 +98,61 @@ const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 // ---------------- body ----------------
 class Body {
-  constructor(spec, sr, sizeScale) {
-    const rng = makeRng(spec.seed || 1);
-    const f = [], Q = [], m = [], g = [];
-    for (const md of spec.modes) { f.push(md[0] * sizeScale); Q.push(md[1]); m.push(md[2]); g.push(md[3]); }
+  constructor(spec, sr, sizeScale, eco) {
+    const rng = makeRng(spec.hf.seed || 1);
+    const f = [], Q = [], m = [], th = [], rad = [];
+    for (const md of spec.modes) { f.push(md[0] * sizeScale); Q.push(md[1]); m.push(md[2]); th.push(md[3] * Math.PI / 180); rad.push(md[4]); }
     const H = spec.hf;
-    for (let i = 0; i < H.count; i++) {
-      const t = i / H.count;
-      f.push(H.f0 * Math.pow(H.f1 / H.f0, t) * (1 + (rng() - 0.5) * 0.15) * sizeScale);
+    // Rayleigh-distributed spacings with mean H.spacing (Woodhouse's statistical high-frequency body)
+    let fr = H.f0;
+    while (fr < H.f1) {
+      const g1 = gaussFrom(rng), g2 = gaussFrom(rng);
+      fr += H.spacing * (2 / Math.PI) * Math.sqrt(g1 * g1 + g2 * g2) * 1.0;
+      f.push(fr * sizeScale);
       Q.push(H.qlo + (H.qhi - H.qlo) * rng());
-      m.push(H.mlo * Math.pow(H.mhi / H.mlo, t) * Math.exp(gaussFrom(rng) * 0.5));
-      g.push(H.g * (rng() < 0.5 ? -1 : 1) * (0.5 + rng()));
+      m.push(Math.min(14, Math.max(0.15, H.mMed * Math.exp(gaussFrom(rng) * H.mSpread))));
+      th.push(gaussFrom(rng) * H.angSd * Math.PI / 180);
+      // radiation efficiency of plate modes rises with frequency (toward coincidence)
+      rad.push((rng() < 0.5 ? -1 : 1) * (0.8 + 0.4 * rng()) * Math.pow(fr / 500, H.radTilt ?? 0.35));
     }
     const n = f.length;
     this.n = n;
     this.f = Float64Array.from(f); this.Q = Float64Array.from(Q); this.m = Float64Array.from(m);
-    // how each mode moves the bridge: (ry, 1) direction -> in-plane share and cross term
-    this.ry = new Float64Array(n); this.rc = new Float64Array(n);
+    this.cz = Float64Array.from(th.map(Math.cos)); this.sy = Float64Array.from(th.map(Math.sin));
+    // radiation bank: every mode below 1.5 kHz, then every second one (radiation is smooth up there)
+    // keep every mode below 1.5 kHz, every 2nd to 4 kHz, every 4th above (each kept mode stands in for the skipped)
+    const keep = [], stride = [];
     for (let i = 0; i < n; i++) {
-      this.ry[i] = spec.inplane * (0.4 + 1.2 * rng());
-      this.rc[i] = spec.cross * (rng() * 2 - 1);
+      const st = this.f[i] < 1500 ? 1 : this.f[i] < 4000 ? (eco ? 3 : 2) : (eco ? 8 : 4);
+      if (i % st === 0) { keep.push(i); stride.push(st); }
     }
-    // radiation: modal velocity v_k = bandpass(F) * Q/(m w); pressure ~ g_k * w_k * v_k, two mics
-    this.b0 = new Float64Array(n); this.a1 = new Float64Array(n); this.a2 = new Float64Array(n);
-    this.gL = new Float64Array(n); this.gR = new Float64Array(n);
-    this.z1 = new Float64Array(n); this.z2 = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
+    const nr = keep.length;
+    this.nr = nr;
+    this.b0 = new Float64Array(nr); this.a1 = new Float64Array(nr); this.a2 = new Float64Array(nr);
+    this.gL = new Float64Array(nr); this.gR = new Float64Array(nr); this.gzy = new Float64Array(nr);
+    this.z1 = new Float64Array(nr); this.z2 = new Float64Array(nr);
+    for (let q = 0; q < nr; q++) {
+      const i = keep[q];
       const w = TAU * Math.min(this.f[i], sr * 0.45) / sr;
       const al = Math.sin(w) / (2 * this.Q[i]), a0 = 1 + al;
-      this.b0[i] = al / a0; this.a1[i] = -2 * Math.cos(w) / a0; this.a2[i] = (1 - al) / a0;
-      const vel = this.Q[i] / (this.m[i] * TAU * this.f[i]);
-      const rad = g[i] * TAU * this.f[i] * vel;
-      const spread = i < spec.modes.length ? spec.modes[i][3] < 0.5 ? 0.6 : 0.15 : 0.9;
-      this.gL[i] = rad * (1 + spread * (rng() - 0.5)) * (rng() < spread * 0.4 ? -1 : 1);
-      this.gR[i] = rad * (1 + spread * (rng() - 0.5)) * (rng() < spread * 0.4 ? -1 : 1);
+      this.b0[q] = al / a0; this.a1[q] = -2 * Math.cos(w) / a0; this.a2[q] = (1 - al) / a0;
+      // normalized bandpass -> modal velocity per unit generalized force: x Q/(m w)
+      const vel = this.Q[i] / (this.m[i] * TAU * this.f[i]) * Math.sqrt(stride[q]) * (stride[q] > 1 ? 1.2 : 1);
+      // radiated pressure follows the normal bridge velocity (Woodhouse), weighted by how well the mode radiates;
+      // two mic positions see each mode with a different weight
+      const r = rad[i] * this.cz[i] * vel;
+      const sp = i < spec.modes.length ? (rad[i] > 0.6 ? 0.12 : 0.6) : 0.8;
+      this.gL[q] = r * (1 + sp * (rng() - 0.5)) * (i >= spec.modes.length && rng() < 0.3 ? -1 : 1);
+      this.gR[q] = r * (1 + sp * (rng() - 0.5)) * (i >= spec.modes.length && rng() < 0.3 ? -1 : 1);
+      this.gzy[q] = 0; // filled per sample from force direction
+      this._idx = keep;
     }
-    this.x1 = 0; this.x2 = 0;
+    // force projection per radiating mode: generalized force = Fz cos(th) + Fy sin(th)
+    this.pz = new Float64Array(nr); this.py = new Float64Array(nr);
+    for (let q = 0; q < nr; q++) { this.pz[q] = this.cz[keep[q]]; this.py[q] = this.sy[keep[q]]; }
+    // first-order radiation highpass (Woodhouse: R = (i w/wc)/(1 + i w/wc))
+    this.radC = Math.exp(-TAU * (spec.radFc || 250) / sr);
+    this.xz1 = 0; this.xz2 = 0; this.xy1 = 0; this.xy2 = 0;
   }
   // 2x2 bridge admittance at angular frequency w. Returns [yyRe,yyIm, yzRe,yzIm, zzRe,zzIm]
   Y(w, out) {
@@ -121,19 +160,18 @@ class Body {
     const w2 = w * w;
     for (let k = 0; k < this.n; k++) {
       const wk = TAU * this.f[k];
-      // i w / (m (wk^2 - w^2 + i w wk/Q))
       const re = this.m[k] * (wk * wk - w2), im = this.m[k] * w * wk / this.Q[k];
       const den = re * re + im * im;
       const yr = (w * im) / den, yi = (w * re) / den;
-      const ry = this.ry[k], rc = this.rc[k];
-      zzR += yr; zzI += yi;
-      yyR += yr * ry * ry; yyI += yi * ry * ry;
-      yzR += yr * rc; yzI += yi * rc;
+      const c = this.cz[k], sn = this.sy[k];
+      zzR += yr * c * c; zzI += yi * c * c;
+      yyR += yr * sn * sn; yyI += yi * sn * sn;
+      yzR += yr * sn * c; yzI += yi * sn * c;
     }
     out[0] = yyR; out[1] = yyI; out[2] = yzR; out[3] = yzI; out[4] = zzR; out[5] = zzI;
     return out;
   }
-  reset() { this.z1.fill(0); this.z2.fill(0); this.x1 = this.x2 = 0; }
+  reset() { this.z1.fill(0); this.z2.fill(0); this.xz1 = this.xz2 = this.xy1 = this.xy2 = 0; }
 }
 
 // ---------------- string voice: a set of modal components ----------------
@@ -162,7 +200,7 @@ class Voice {
 class GString {
   constructor(idx) {
     this.idx = idx;
-    this.voices = [new Voice(), new Voice()];
+    this.voices = [new Voice(), new Voice(), new Voice()];
     this.cur = 0;
     this.open = STD[idx]; this.midi = STD[idx]; this.fret = 0;
     this.releaseAt = -1;
@@ -172,7 +210,9 @@ class GString {
     // longitudinal modes: f_Ln = n/(2L) sqrt(EA/mu); driven by tension fluctuations
     this.lonN = 0; this.lonC1 = new Float64Array(4); this.lonC2 = new Float64Array(4);
     this.lonY1 = new Float64Array(4); this.lonY2 = new Float64Array(4); this.lonG = 0;
+    this.lonIn = new Float64Array(4); this.lonT = 100; this.lonEA = 1e4;
     this.f2lp = 0;
+    this.ownRing = new Float64Array(128);
   }
   get v() { return this.voices[this.cur]; }
 }
@@ -186,19 +226,22 @@ class GuitarEngine {
     this.queue = [];
     this.params = {
       preset: 'dreadnought', tuning: STD.slice(), capo: 0, brightness: 0.55, body: 1.0, bodySize: 1.0,
-      sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null
+      sympathetic: 0.5, noise: 0.5, width: 1.0, gain: 1.0, override: null, quality: 'high'
     };
     this.bend = 0; this.bendTarget = 0;
     this.RING = 16384; this.RMASK = this.RING - 1;
     this.bodyIn = new Float64Array(this.RING);    // extra force into the body (pick noise etc.)
     this.dirL = new Float64Array(this.RING); this.dirR = new Float64Array(this.RING);
-    this.staticOff = 0;                            // released pick load (decays slowly)
+    this.staticZ = 0; this.staticY = 0;           // released pick load (decays slowly)
+    this.radL = this.radR = this.radXL = this.radXR = 0;
     this.yTmp = new Float64Array(6);
     this.blockCount = 0;
     this.dcL = 0; this.dcR = 0; this.dcxL = 0; this.dcxR = 0;
     this.airL = 0; this.airR = 0;
     this.rh = new Float64Array(8);
     this.cplLP = 0; this.cplHP = 0; this.lastF = 0;
+    this.cplRing = new Float64Array(128); this.U = new Float64Array(64);
+    this.FY = []; this.FZ = []; for (let j = 0; j < 6; j++) { this.FY.push(new Float64Array(64)); this.FZ.push(new Float64Array(64)); }
     this.setPreset('dreadnought');
   }
 
@@ -206,7 +249,7 @@ class GuitarEngine {
   setParams(p) {
     let rebuild = false, retune = false;
     for (const k in p) {
-      if (k === 'preset' || k === 'bodySize' || k === 'override') rebuild = true;
+      if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality') rebuild = true;
       if (k === 'tuning' || k === 'capo' || k === 'brightness') retune = true;
       this.params[k] = p[k];
     }
@@ -219,7 +262,7 @@ class GuitarEngine {
     const ov = this.params.override || {};
     this.P = Object.assign({}, base, ov, { body: Object.assign({}, base.body, ov.body || {}), damp: Object.assign({}, base.damp, ov.damp || {}) });
     if (ov.body && ov.body.hf) this.P.body.hf = Object.assign({}, base.body.hf, ov.body.hf);
-    this.body = new Body(this.P.body, this.sr, 1 / Math.max(0.7, Math.min(1.4, this.params.bodySize)));
+    this.body = new Body(this.P.body, this.sr, 1 / Math.max(0.7, Math.min(1.4, this.params.bodySize)), this.params.quality === 'eco');
     const sr = this.sr;
     { const w = TAU * this.P.radHP / sr, q = 0.75, al = Math.sin(w) / (2 * q), a0 = 1 + al, cw = Math.cos(w);
       this.rhb0 = (1 + cw) / 2 / a0; this.rhb1 = -(1 + cw) / a0; this.rhb2 = this.rhb0; this.rha1 = -2 * cw / a0; this.rha2 = (1 - al) / a0; }
@@ -237,16 +280,15 @@ class GuitarEngine {
     }
   }
 
-  // Physical string data for string i at its current open pitch.
+  // Physical string data for string i at its current open pitch (tension follows the tuning).
   stringPhys(i) {
     const P = this.P, sp = P.strings[i];
-    const Tstd = sp[0], d = sp[1], dc = sp[2], wound = !!sp[3];
     const fstd = mtof(STD[i]);
-    const mu = Tstd / Math.pow(2 * P.scale * fstd, 2);
-    const fopen = mtof(this.params.tuning[i]); // capo shortens the string, tension set by the tuning
-    const T = mu * Math.pow(2 * P.scale * fopen, 2);
-    const Ecore = P.E * (wound && P.damp.woundCoreE ? P.damp.woundCoreE : 1);
-    return { T, mu, d, dc, wound, Ecore, fopen, EA: Ecore * Math.PI * dc * dc / 4 };
+    const mu = sp.mu;
+    const fopen = mtof(this.params.tuning[i]);
+    const Tstd = sp.T;
+    const T = Tstd * Math.pow(fopen / fstd, 2) * (mu * Math.pow(2 * P.scale * fstd, 2) / Tstd); // T = mu (2 L f)^2
+    return Object.assign({}, sp, { T, fopen });
   }
 
   // Longitudinal resonances of string i at its sounding length (stiff core, full string mass).
@@ -259,14 +301,16 @@ class GuitarEngine {
       const f = n * f1; if (f > sr * 0.42) break;
       const r = Math.exp(-Math.PI * f / (this.P.lonQ || 350) / sr);
       s.lonC1[n - 1] = 2 * r * Math.cos(TAU * f / sr); s.lonC2[n - 1] = r * r; s.lonN = n;
+      s.lonIn[n - 1] = (1 - r) / n; // unity-ish resonance gain, higher axial modes weaker
     }
     // wound strings couple far more (windings rub; core and wrap move differently)
     s.lonG = (this.P.lonGain || 0) * (ph.wound ? 1 : 0.35);
+    s.lonT = ph.T; s.lonEA = ph.EA;
   }
 
   // Build the modal components of string i sounding `midi` into voice v.
   loadModes(v, i, midi) {
-    const key = i + ':' + midi.toFixed(3) + ':' + this.params.tuning[i] + ':' + this.params.brightness;
+    const key = i + ':' + midi.toFixed(3) + ':' + this.params.tuning[i] + ':' + this.params.brightness + ':' + this.params.quality;
     let M = this.modeCache.get(key);
     if (!M) { M = this.computeModes(i, midi); if (this.modeCache.size > 400) this.modeCache.clear(); this.modeCache.set(key, M); }
     const n = M.n;
@@ -288,32 +332,34 @@ class GuitarEngine {
     const L = P.scale * Math.pow(2, -fret / 12);
     const f0 = mtof(midi);
     const T = ph.T;
-    const B = Math.PI ** 3 * ph.Ecore * ph.dc ** 4 / (64 * T * L * L);
-    const fmax = Math.min(sr * 0.45, 11000);
+    const B = Math.PI * Math.PI * ph.EI / (T * L * L);
+    const fmax = Math.min(sr * 0.45, this.params.quality === 'eco' ? 7000 : 11000);
     const out = { n: 0, L, T, EA: ph.EA, B, f0, k: new Int32Array(MAXC), w: new Float64Array(MAXC), sig: new Float64Array(MAXC),
       vy: new Float64Array(MAXC), vz: new Float64Array(MAXC), wy: new Float64Array(MAXC), wz: new Float64Array(MAXC), gin: new Float64Array(MAXC), single: new Uint8Array(MAXC) };
-    const D = P.damp, br = this.params.brightness;
-    const eta = 1.8e-5, rhoA = 1.2;
-    const I = Math.PI * ph.dc ** 4 / 64;
-    const ve = (ph.wound ? D.veWound : D.vePlain) * (1.6 - 1.2 * br); // old strings: more internal loss
-    const te = ph.wound ? D.teWound : D.tePlain;
+    // string age: brightness 1 = new strings, 0 = old (dirt in the windings raises bending loss)
+    const br = this.params.brightness, age = Math.max(0, Math.min(1, 1 - br));
+    const etaB = ph.etaBn * Math.pow(ph.etaBu / ph.etaBn, age);
     const Y = this.Ybuf;
     const fretted = fret - capo > 0.5;
+    const pd = P.polDetune || 0, D = P.damp;
     let c = 0;
     for (let k = 1; c < MAXC - 1; k++) {
       const f = k * f0 * Math.sqrt(1 + B * k * k);
       if (f > fmax) break;
       const w = TAU * f;
-      // intrinsic damping (Valette & Cuesta)
-      const R = TAU * eta + TAU * ph.d * Math.sqrt(Math.PI * eta * rhoA * f);
-      const qAir = R / (TAU * ph.mu * f);
-      const qVe = 4 * Math.PI * Math.PI * ph.mu * ph.Ecore * I * ve * f * f / (T * T);
-      let sInt = Math.PI * f * (qAir + qVe + te);
-      if (fretted) sInt += D.fretted * (1 + f / 2000); // finger on the fret, neck losses
+      // intrinsic damping (Woodhouse): loss factor weighted by tension vs bending energy; T60 = 13.8/(w eta)
+      const kk = k * Math.PI / L, bend = ph.EI * kk * kk;
+      // Woodhouse's etaA was fitted on whole guitars (it carries some body loss we now model explicitly): scale it;
+      // plain strings get extra friction loss calibrated to recorded steel-string notes (P.plainEtaF)
+      const etaF = ph.wound ? ph.etaF : Math.max(ph.etaF, (P.plainEtaF || 0) * (0.6 + 0.8 * age));
+      const eta = (T * (etaF + (P.airScale ?? 1) * ph.etaA / w) + bend * etaB) / (T + bend);
+      let sInt = w * eta / 2;
+      if (fretted) sInt += D.fretted * (1 + f / 2000); // fingertip and neck losses on fretted notes
       // bridge coupling: ds = -(T/L) Y2(w), eigen-decomposed
       this.body.Y(w, Y);
       const s = -T / L;
-      const aR = s * Y[0], aI = s * Y[1], bR = s * Y[2], bI = s * Y[3], dR = s * Y[4], dI = s * Y[5];
+      // the normal (z) polarization sits slightly sharp: the string's effective length differs at the saddle
+      const aR = s * Y[0], aI = s * Y[1], bR = s * Y[2], bI = s * Y[3], dR = s * Y[4], dI = s * Y[5] + pd * w;
       // eigenvalues of [[a,b],[b,d]]: (a+d)/2 +- sqrt(((a-d)/2)^2 + b^2)
       const hR = (aR - dR) / 2, hI = (aI - dI) / 2;
       const qR = hR * hR - hI * hI + bR * bR - bI * bI, qI = 2 * hR * hI + 2 * bR * bI;
@@ -383,7 +429,7 @@ class GuitarEngine {
     const style = ev.style || 'pick';
     const vel = Math.max(0.02, Math.min(1, ev.vel == null ? 0.7 : ev.vel));
     const pre = Math.round((style === 'pick' ? 0.0025 : 0.0012) * this.sr);
-    const wound = this.P.strings[ev.s] && this.P.strings[ev.s][3];
+    const wound = this.P.strings[ev.s] && this.P.strings[ev.s].wound;
     const amt = this.params.noise * vel * (style === 'pick' ? 0.12 : 0.04) * (wound ? 1 : 0.5);
     if (amt <= 0) return pre;
     const start = this.clock & this.RMASK;
@@ -419,7 +465,7 @@ class GuitarEngine {
       const old = v;
       old.extraTarget = Math.max(old.extraTarget, 70); old.extraRate = 0.5; old.extra = Math.max(old.extra, 25);
       this.updateCoefs(old, true);
-      s.cur ^= 1; v = s.v;
+      s.cur = this.quietestVoice(s); v = s.v;
       this.loadModes(v, ev.s, midi);
     } else {
       // pick lands on a ringing string: it stops part of the motion
@@ -473,18 +519,31 @@ class GuitarEngine {
     this.rebuildActive(v);
     // the bridge load the pick held is released: relative to the pre-loaded body this is a step of -F_static
     const Fs = v.T * h / xp * dir;
-    this.staticOff -= Fs * (st + P.body.gy * ct);
+    this.staticZ -= Fs * st; this.staticY -= Fs * ct;
     // release click: pick or nail leaving the string, straight into the body
     const nAmt = this.params.noise * vel * (style === 'pick' ? 0.45 : 0.15) * (ev.dead ? 2 : 1);
     if (nAmt > 0) {
       const start = this.clock & this.RMASK, nl = Math.round(0.004 * sr);
-      const wound = this.P.strings[ev.s][3];
+      const wound = this.P.strings[ev.s].wound;
       let p1 = 0, p2 = 0;
       for (let i = 0; i < nl; i++) {
         const r = this.rng() * 2 - 1, hp = r - 2 * p1 + p2; p2 = p1; p1 = r;
         this.bodyIn[(start + i) & this.RMASK] += hp * nAmt * Math.exp(-i / (0.0009 * sr)) * (wound ? 1 : 0.5);
       }
     }
+  }
+
+  // the voice slot (other than the current one) with the least remaining vibration
+  quietestVoice(s) {
+    let best = -1, bestE = Infinity;
+    for (let i = 0; i < s.voices.length; i++) {
+      if (i === s.cur) continue;
+      const v = s.voices[i];
+      let e = 0;
+      for (let q = 0; q < v.nact; q++) { const c = v.act[q]; e += v.y1[c] * v.y1[c] + v.y2[c] * v.y2[c]; }
+      if (e < bestE) { bestE = e; best = i; }
+    }
+    return best;
   }
 
   addOsc(v, c, a) {
@@ -498,7 +557,7 @@ class GuitarEngine {
     let n = 0;
     for (let c = 0; c < v.n; c++) {
       const y1 = v.y1[c], y2 = v.y2[c];
-      if (y1 * y1 + y2 * y2 > 1e-17) v.act[n++] = c;
+      if (y1 * y1 + y2 * y2 > 2e-15) v.act[n++] = c;
     }
     v.nact = n;
   }
@@ -519,7 +578,7 @@ class GuitarEngine {
     const s = this.strings[ev.s]; if (!s) return;
     const amt = (ev.amt == null ? 0.5 : ev.amt) * this.params.noise;
     if (amt < 0.01) return;
-    if (!this.P.strings[ev.s][3]) return;
+    if (!this.P.strings[ev.s].wound) return;
     const sr = this.sr, dur = 0.06 + 0.12 * this.rng();
     const n = Math.min(this.RING - 64, Math.round(dur * sr));
     const start = (ev._at || this.clock) & this.RMASK;
@@ -535,7 +594,7 @@ class GuitarEngine {
       z2 = z1; z1 = y;
       ph += rate / sr;
       const env = Math.sin(Math.PI * t) ** 2;
-      const val = y * (0.5 + 0.5 * Math.cos(TAU * ph)) * env * amt * 0.09 * lvl;
+      const val = y * (0.5 + 0.5 * Math.cos(TAU * ph)) * env * amt * 0.025 * lvl;
       this.dirL[(start + k) & this.RMASK] += val * (1 - pan);
       this.dirR[(start + k) & this.RMASK] += val * (1 + pan);
     }
@@ -557,7 +616,7 @@ class GuitarEngine {
           const r = Math.sqrt(v.c2[c]), cw = v.c1[c] / (2 * r), sw2 = Math.max(1e-6, 1 - cw * cw);
           const yp = y2 * r;
           const a2 = (y1 * y1 + yp * yp - 2 * y1 * yp * cw) / sw2;
-          if (a2 > 1e-17) v.act[n++] = c;
+          if (a2 > 2e-15) v.act[n++] = c;
           const kk = v.k[c] * Math.PI / v.L;
           slope2 += kk * kk * a2;
         }
@@ -574,12 +633,12 @@ class GuitarEngine {
         const bendChanged = v.appliedBend !== this.bend && Math.abs(this.bend - (v.appliedBend || 0)) > 1e-4;
         this.updateCoefs(v, bendChanged);
       }
-      s.env = s.env * 0.7 + 0.3 * envSum * 0.004;
+      s.env = s.env * 0.7 + 0.3 * envSum * 0.03;
       // finger lifted: string becomes a free open string again
       if (s.releaseAt >= 0 && this.clock >= s.releaseAt) {
         s.releaseAt = -1;
         const v = s.v;
-        if (Math.abs(v.midi - s.open) > 0.01) { s.cur ^= 1; this.loadModes(s.v, s.idx, s.open); s.midi = s.open; s.fret = 0; }
+        if (Math.abs(v.midi - s.open) > 0.01) { s.cur = this.quietestVoice(s); this.loadModes(s.v, s.idx, s.open); s.midi = s.open; s.fret = 0; }
         else { v.extraTarget = 0; v.extraRate = 0.2; }
         s.v.live = false;
       }
@@ -603,64 +662,85 @@ class GuitarEngine {
   }
 
   renderSeg(outL, outR, off, n) {
-    const S = this.strings, B = this.body, nb = B.n;
-    const b0 = B.b0, a1 = B.a1, a2 = B.a2, gL = B.gL, gR = B.gR, z1 = B.z1, z2 = B.z2;
-    const gy = this.P.body.gy, bodyAmt = this.params.body, gain = this.params.gain * this.P.out;
+    const S = this.strings, B = this.body, nb = B.nr;
+    const b0 = B.b0, a1 = B.a1, a2 = B.a2, gL = B.gL, gR = B.gR, z1 = B.z1, z2 = B.z2, pz = B.pz, py = B.py;
+    const gy = 0.3, bodyAmt = this.params.body, gain = this.params.gain * this.P.out;
     const width = this.params.width;
     const symp = this.params.sympathetic * 1.2e-6; // bridge compliance, m/N
-    const sr = this.sr;
-    const fz = this.yTmp;
-    const lpC = 1 - Math.exp(-TAU * 3000 / sr), hpC = Math.exp(-TAU * 60 / sr);
+    const sr = this.sr, CD = 64, CM = 127;          // sympathetic coupling arrives through a 64-sample delay
     const stDecay = Math.exp(-1 / (0.6 * sr));
+    const lpC = 1 - Math.exp(-TAU * 3000 / sr), hpC = Math.exp(-TAU * 60 / sr);
+    const ring = this.cplRing, t0 = this.clock;
+    // 1) strings, oscillator-major: each component runs the whole segment from registers
+    for (let j = 0; j < 6; j++) {
+      const s = S[j], FY = this.FY[j], FZ = this.FZ[j], U = this.U;
+      FY.fill(0, 0, n); FZ.fill(0, 0, n);
+      const own = s.ownRing;
+      let anyU = false;
+      if (symp > 0) for (let i = 0; i < n; i++) {
+        const k = (t0 + i - CD) & CM;
+        const u = symp * (ring[k] - own[k]); U[i] = u; if (u !== 0) anyU = true;
+      }
+      for (let vv = 0; vv < 3; vv++) {
+        const v = s.voices[vv];
+        const na = v.nact; if (!na) continue;
+        const act = v.act, c1a = v.c1, c2a = v.c2, y1a = v.y1, y2a = v.y2, wya = v.wy, wza = v.wz, gina = v.gin;
+        for (let q = 0; q < na; q++) {
+          const c = act[q];
+          const c1 = c1a[c], c2 = c2a[c], wy = wya[c], wz = wza[c];
+          let y1 = y1a[c], y2 = y2a[c];
+          if (anyU) {
+            const g = gina[c];
+            for (let i = 0; i < n; i++) { const y = c1 * y1 - c2 * y2 + g * U[i]; y2 = y1; y1 = y; FY[i] += wy * y; FZ[i] += wz * y; }
+          } else {
+            for (let i = 0; i < n; i++) { const y = c1 * y1 - c2 * y2; y2 = y1; y1 = y; FY[i] += wy * y; FZ[i] += wz * y; }
+          }
+          y1a[c] = y1; y2a[c] = y2;
+        }
+      }
+    }
+    // 2) per sample: longitudinal modes, coupling ring, body, radiation, output
     for (let i = 0; i < n; i++) {
-      const tIdx = this.clock & this.RMASK;
-      // sympathetic drive: band-limited bridge force from the other strings (last sample)
-      this.cplLP += (this.lastF - this.cplLP) * lpC || 0;
-      this.cplHP = hpC * this.cplHP + (1 - hpC) * this.cplLP;
-      const cpl = this.cplLP - this.cplHP;
+      const tIdx = (t0 + i) & this.RMASK;
       let Ftot = 0, Fy = 0, Fz = 0;
       for (let j = 0; j < 6; j++) {
         const s = S[j];
-        let sy = 0, sz = 0;
-        const u = symp * (cpl - s.lastU);
-        for (let vv = 0; vv < 2; vv++) {
-          const v = s.voices[vv];
-          const na = v.nact; if (!na) continue;
-          const act = v.act, c1 = v.c1, c2 = v.c2, y1 = v.y1, y2 = v.y2, wy = v.wy, wz = v.wz, gin = v.gin;
-          for (let q = 0; q < na; q++) {
-            const c = act[q];
-            const y = c1[c] * y1[c] - c2[c] * y2[c] + gin[c] * u;
-            y2[c] = y1[c]; y1[c] = y;
-            sy += wy[c] * y; sz += wz[c] * y;
-          }
-        }
-        let own = sz + gy * sy;
+        const sy = this.FY[j][i], sz = this.FZ[j][i];
+        let own = sz + gy * sy, lo = 0;
         if (s.lonN && s.lonG) {
-          // tension fluctuation ~ square of the string slope at the bridge ~ (force)^2; remove its slow part
-          const f2 = own * own; s.f2lp += (f2 - s.f2lp) * 0.002;
+          const sl = own / s.lonT, f2 = s.lonEA * 0.5 * sl * sl;
+          s.f2lp += (f2 - s.f2lp) * 0.002;
           const drive = (f2 - s.f2lp) * s.lonG;
-          let lo = 0;
           for (let q = 0; q < s.lonN; q++) {
-            const y = s.lonC1[q] * s.lonY1[q] - s.lonC2[q] * s.lonY2[q] + drive / (q + 1);
+            const y = s.lonC1[q] * s.lonY1[q] - s.lonC2[q] * s.lonY2[q] + drive * s.lonIn[q];
             s.lonY2[q] = s.lonY1[q]; s.lonY1[q] = y; lo += y;
           }
           own += lo;
         }
-        s.lastU = own; s.out = own;
-        Fy += sy; Fz += sz; Ftot += own;
+        s.ownRing[(t0 + i) & CM] = own; s.out = own;
+        Fy += sy; Fz += sz + lo; Ftot += own;
       }
-      this.lastF = Ftot;
-      // body: modal velocities driven by bridge force (minus the released pick load)
-      this.staticOff *= stDecay;
-      const bi = Ftot + this.staticOff + this.bodyIn[tIdx]; this.bodyIn[tIdx] = 0;
-      const bx = bi - B.x2; B.x2 = B.x1; B.x1 = bi;
+      // band-limited total bridge force for the sympathetic ring
+      this.cplLP += (Ftot - this.cplLP) * lpC;
+      this.cplHP = hpC * this.cplHP + (1 - hpC) * this.cplLP;
+      ring[(t0 + i) & CM] = this.cplLP - this.cplHP;
+      // body: each mode driven by the bridge force projected on its direction of motion; the released pick
+      // load appears as a step relative to the pre-loaded body
+      this.staticZ *= stDecay; this.staticY *= stDecay;
+      const inZ = Fz + this.staticZ + this.bodyIn[tIdx], inY = Fy + this.staticY; this.bodyIn[tIdx] = 0;
+      const dz = inZ - B.xz2; B.xz2 = B.xz1; B.xz1 = inZ;
+      const dy = inY - B.xy2; B.xy2 = B.xy1; B.xy1 = inY;
       let L = 0, R = 0;
       for (let q = 0; q < nb; q++) {
-        const y = b0[q] * bx - a1[q] * z1[q] - a2[q] * z2[q];
+        const y = b0[q] * (pz[q] * dz + py[q] * dy) - a1[q] * z1[q] - a2[q] * z2[q];
         z2[q] = z1[q]; z1[q] = y;
         L += gL[q] * y; R += gR[q] * y;
       }
-      L *= bodyAmt; R *= bodyAmt;
+      // radiation: first-order highpass of the bridge velocity (Woodhouse's single radiation filter)
+      const rc = B.radC;
+      const hl = rc * (this.radL + L - this.radXL); this.radXL = L; this.radL = hl;
+      const hr = rc * (this.radR + R - this.radXR); this.radXR = R; this.radR = hr;
+      L = hl * bodyAmt; R = hr * bodyAmt;
       const mid = 0.5 * (L + R), side = 0.5 * (L - R) * width;
       L = mid + side; R = mid - side;
       { const r = this.rh;
@@ -677,13 +757,13 @@ class GuitarEngine {
       let oL = yL * gain, oR = yR * gain;
       if (!(oL === oL) || !(oR === oR)) { this.panicReset(); oL = oR = 0; }
       outL[off + i] = oL; outR[off + i] = oR;
-      this.clock++;
     }
+    this.clock += n;
   }
 
   panicReset() {
     for (const s of this.strings) for (const v of s.voices) { v.y1.fill(0); v.y2.fill(0); v.nact = 0; }
-    this.body.reset(); this.staticOff = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
+    this.body.reset(); this.staticZ = this.staticY = 0; this.radL = this.radR = this.radXL = this.radXR = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
   }
 
   meters() {

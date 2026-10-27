@@ -28,9 +28,24 @@ function setEngine(params) { send([{ type: 'params', params, t: engineTime() }])
 
 const strum = new StrumEngine({ send, now: engineTime, onVoicing: (f) => { shape = f.slice(); $('shapeText').textContent = shapeLabel(shape); } });
 
+// Rough device benchmark: render a worst-case second (two overlapping full strums) on the main thread.
+let quality = 'high';
+function benchmark() {
+  try {
+    const E = new GuitarEngine(48000), open = [40, 45, 50, 55, 59, 64];
+    for (let s = 0; s < 6; s++) E.post({ t: 0.001 + s * 0.008, type: 'pluck', s, midi: open[s] + [3, 2, 0, 0, 0, 3][s], vel: 1, style: 'pick', dir: 1 });
+    const L = new Float32Array(128), R = new Float32Array(128);
+    for (let i = 0; i < 20; i++) E.render(L, R, 128, 0);
+    const t0 = performance.now(); for (let i = 0; i < 94; i++) E.render(L, R, 128, 0);
+    const load = (performance.now() - t0) / 250; // fraction of real time for 0.25 s of audio
+    return load;
+  } catch (e) { return 0; }
+}
 async function start() {
   if (started) return;
   started = true;
+  const load = benchmark();
+  quality = load > 0.3 ? 'eco' : 'high';
   ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 });
   master = ctx.createGain(); master.gain.value = 1;
   dryGain = ctx.createGain(); wetGain = ctx.createGain();
@@ -193,7 +208,7 @@ function bindSliders() {
 }
 function applyAll() {
   for (const id in sliders) sliders[id].apply(+$(id).value);
-  setEngine({ preset: $('preset').value, tuning, capo });
+  setEngine({ preset: $('preset').value, tuning, capo, quality });
 }
 function bindSegs() {
   document.querySelectorAll('.seg').forEach(seg => {

@@ -187,7 +187,7 @@ class StrumEngine {
       mode: 'pick',          // 'pick' | 'finger'
       voicing: 'played',     // 'played' | 'guitarize'
       direction: 'auto',     // 'auto' | 'down' | 'up' | 'alternate'
-      speed: 0.035,          // seconds for a 6-string stroke at medium velocity
+      speed: 0.055,          // seconds for a 6-string stroke at medium velocity (measured strums: 26-62 ms)
       humanize: 0.6,
       gather: 0.018,
       letRing: false,
@@ -399,7 +399,7 @@ class StrumEngine {
   stroke(evs, order, v, vel, dir, t0, open, speedOverride) {
     const h = this.o.humanize, n = order.length;
     // total sweep time: faster when harder; scales with the distance travelled (string spacing ~10.5 mm)
-    const T = (speedOverride ?? this.o.speed * (1.45 - 0.85 * vel)) * Math.max(1, n - 1) / 5 * (dir < 0 ? 0.85 : 1);
+    const T = (speedOverride ?? this.o.speed * (1.45 - 0.85 * vel)) * Math.max(1, n - 1) / 5 * (dir < 0 ? 0.75 : 1);
     let t = t0 + Math.abs(gauss(this.rng)) * 0.003 * h;
     let catchAcc = 0;
     for (let i = 0; i < n; i++) {
@@ -413,9 +413,10 @@ class StrumEngine {
       catchAcc += (0.0009 + 0.0007 * (5 - s) / 5) * (1.1 - 0.6 * vel) * (1 + 0.3 * gauss(this.rng) * h);
       const fret = v.frets[s];
       const dead = fret < 0;
-      const sv = clamp(vel * (dir > 0 ? 1 - 0.2 * frac : (0.78 - 0.15 * frac)) * (1 + gauss(this.rng) * 0.07 * h) * (dead ? 0.7 : 1), 0.03, 1);
+      // recorded upstrokes are only ~1.5 dB softer than downstrokes and brighter (treble strings, pick edge)
+      const sv = clamp(vel * (dir > 0 ? 1 - 0.2 * frac : (0.9 - 0.12 * frac)) * (1 + gauss(this.rng) * 0.07 * h) * (dead ? 0.7 : 1), 0.03, 1);
       evs.push({ type: 'pluck', s, midi: dead ? open[s] : open[s] + fret, t: Math.max(t0, tt), vel: sv, dir,
-        style: 'pick', dead, palm: this.o.palm,
+        style: 'pick', dead, palm: this.o.palm, bright: dir < 0 ? 1.8 : 1,
         pickPos: this.o.pickPos * (1 + 0.03 * (dir > 0 ? i : n - i) / Math.max(1, n) + gauss(this.rng) * 0.03 * h) });
     }
   }
@@ -437,7 +438,7 @@ class StrumEngine {
 
   squeaks(evs, v, shift, t0) {
     const wound = [0, 1, 2, 3].filter(s => v.frets[s] > 0);
-    if (!wound.length || this.rng() > 0.55 + 0.1 * shift) return;
+    if (!wound.length || this.rng() > 0.25 + 0.06 * shift) return;
     const s = wound[Math.floor(this.rng() * wound.length)];
     evs.push({ type: 'squeak', s, amt: clamp(0.25 + 0.08 * shift, 0, 1), t: Math.max(this.now(), t0 - 0.09) });
   }
