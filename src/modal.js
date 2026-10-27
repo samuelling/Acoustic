@@ -364,6 +364,7 @@ class GuitarEngine {
     this.mD = new Float64Array(14); this.mG = new Float64Array(14); this.mN = new Float64Array(14); this.mS = new Float64Array(14);
     this.mC = new Float64Array(14); this.mI = new Float64Array(14); this.mLP = new Float64Array(14); this.nm = 1;
     this.rhF = new Float64Array(8); this.feedF = 0; this.feedB = 0; this.sceneDirty = true;
+    this.eqC = new Float64Array(2 * 7 * 5); this.eqZ = new Float64Array(2 * 7 * 2); this.eqOn = false; // far-field directivity EQ per mic
     this.FY = []; this.FZ = []; for (let j = 0; j < 6; j++) { this.FY.push(new Float64Array(64)); this.FZ.push(new Float64Array(64)); }
     this.setPreset('dreadnought');
   }
@@ -373,7 +374,7 @@ class GuitarEngine {
     let rebuild = false, retune = false;
     for (const k in p) {
       if (k === 'preset' || k === 'bodySize' || k === 'override' || k === 'quality' || k === 'build') rebuild = true;
-      if (k === 'scene') this.sceneDirty = true;
+      if (k === 'scene' || k === 'build') this.sceneDirty = true;
       if (k === 'tuning' || k === 'capo' || k === 'brightness') retune = true;
       this.params[k] = p[k];
     }
@@ -541,6 +542,7 @@ class GuitarEngine {
 
   // ---------- events ----------
   post(ev) {
+    ev = Object.assign({}, ev);   // the queue annotates events; never touch the caller's object
     const at = ev.t == null ? this.clock : Math.max(this.clock, Math.round(ev.t * this.sr));
     ev._at = at;
     const q = this.queue; let i = q.length;
@@ -899,6 +901,21 @@ class GuitarEngine {
         r[1] = r[0]; r[0] = L; r[3] = r[2]; r[2] = yl; L = yl;
         const yr = this.rhb0 * R + this.rhb1 * r[4] + this.rhb2 * r[5] - this.rha1 * r[6] - this.rha2 * r[7];
         r[5] = r[4]; r[4] = R; r[7] = r[6]; r[6] = yr; R = yr; }
+      if (this.eqOn) {
+        // measured far-field directivity correction (transposed direct form II biquads)
+        const c = this.eqC, z = this.eqZ;
+        for (let ch = 0; ch < 2; ch++) {
+          let x = ch === 0 ? L : R;
+          for (let q = 0; q < 7; q++) {
+            const o = (ch * 7 + q) * 5, zo = (ch * 7 + q) * 2;
+            const y = c[o] * x + z[zo];
+            z[zo] = c[o + 1] * x - c[o + 3] * y + z[zo + 1];
+            z[zo + 1] = c[o + 2] * x - c[o + 4] * y;
+            x = y;
+          }
+          if (ch === 0) L = x; else R = x;
+        }
+      }
       this.airL = this.airC * this.airL + (1 - this.airC) * L;
       this.airR = this.airC * this.airR + (1 - this.airC) * R;
       L = this.airL + this.dirL[tIdx]; R = this.airR + this.dirR[tIdx];
@@ -939,12 +956,23 @@ class GuitarEngine {
       this.mS[j] = c.shadow;
       this.mC[j] = 1 - Math.exp(-TAU * (ears ? 1400 : 380) / this.sr);
     }
+    // far-field correction toward the measured directivity of a played guitar (AcousticSpace.directEQ)
+    this.eqOn = false;
+    if (S && S.directEQ) {
+      const eq = S.directEQ(sc);
+      for (let ch = 0; ch < 2; ch++) {
+        const g = eq[Math.min(ch, eq.length - 1)];
+        if (g.some(x => Math.abs(x) > 0.05)) this.eqOn = true;
+        const cs = S.designEQ(g, this.sr);
+        for (let q = 0; q < 7; q++) for (let k = 0; k < 5; k++) this.eqC[(ch * 7 + q) * 5 + k] = cs[q][k];
+      }
+    }
   }
 
   panicReset() {
     for (const s of this.strings) for (const v of s.voices) { v.y1.fill(0); v.y2.fill(0); v.nact = 0; }
     this.body.reset(); this.staticZ = this.staticY = 0; this.radL = this.radR = this.radXL = this.radXR = 0; this.cplLP = this.cplHP = 0; this.lastF = 0; this.rh.fill(0);
-    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0);
+    this.regRing.fill(0); this.regHP.fill(0); this.regX.fill(0); this.mI.fill(0); this.mLP.fill(0); this.rhF.fill(0); this.eqZ.fill(0);
   }
 
   meters() {
