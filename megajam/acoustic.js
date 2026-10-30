@@ -46,7 +46,8 @@ export default async function (arg, { base }) {
     { id: 'body', name: 'Guitar', options: PRESET_IDS.map((k) => space.GUITAR_PRESETS?.[k]?.name || k), min: 0, max: 2, def: 0, step: 1, group: 'GUITAR' },
     { id: 'mode', name: 'Hand', options: ['Pick', 'Fingers', 'Pattern'], min: 0, max: 2, def: 0, step: 1, group: 'HAND' },
     { id: 'style', name: 'Pattern', options: styleNames, min: 0, max: Math.max(0, STYLE_IDS.length - 1), def: Math.max(0, STYLE_IDS.indexOf('travis')), step: 1, group: 'HAND' },
-    { id: 'bpm', name: 'Pattern tempo', min: 40, max: 220, def: 96, step: 1, unit: 'bpm', group: 'HAND' },
+    { id: 'sync', name: "Room's tempo", min: 0, max: 1, def: 1, step: 1, group: 'HAND' },
+    { id: 'bpm', name: 'Own tempo', min: 40, max: 220, def: 96, step: 1, unit: 'bpm', group: 'HAND' },
     { id: 'voicing', name: 'Voicing', options: ['As played', 'Guitar shape'], min: 0, max: 1, def: 1, step: 1, group: 'HAND' },
     { id: 'speed', name: 'Strum speed', min: 0.02, max: 0.1, def: 0.055, unit: 's', group: 'HAND' },
     { id: 'humanize', name: 'Humanize', min: 0, max: 1, def: 0.6, group: 'HAND' },
@@ -137,7 +138,11 @@ export default async function (arg, { base }) {
       const vClear = (id) => { const i = q.findIndex((x) => x.ord === id); if (i >= 0) q.splice(i, 1); };
       let rng = rngFrom(1);
       const run = (until) => {
-        while (q.length && q[0].at <= until) { const it = q.shift(); vt = Math.max(vt, it.at); rng = rngFrom(seedOf(vt, it.ord & 0)); try { it.fn(); } catch (e) { console.warn('Acoustic hand:', e); } }
+        while (q.length && q[0].at <= until) {
+          const it = q.shift(); vt = Math.max(vt, it.at); rng = rngFrom(seedOf(vt, 0));
+          if (p.sync && hand) hand.o.bpm = roomBpm();   // the tempo at this moment of room time: the same answer in every browser
+          try { it.fn(); } catch (e) { console.warn('Acoustic hand:', e); }
+        }
       };
       // the guitar engine gets everything in audio time, each event seeded from its room time
       const post = (evs) => {
@@ -154,7 +159,8 @@ export default async function (arg, { base }) {
       const ENGINE = { body: () => ({ preset: PRESET_IDS[p.body] || 'dreadnought' }), capo: () => ({ capo: p.capo }), bright: () => ({ brightness: p.bright }), mic: () => ({ scene: { mics: sceneOf().mics } }) };
       // quality is fixed at full for everyone: the "eco" detail level would make this guitar sound different in a slower bandmate's browser
       const engineParams = (t, id) => post([{ type: 'params', t, params: id ? ENGINE[id]() : { ...ENGINE.body(), ...ENGINE.capo(), ...ENGINE.bright(), ...ENGINE.mic(), quality: 'high', build: { ...BUILD } } }]);
-      const handOpts = () => ({ mode: MODES[p.mode] || 'pick', style: STYLE_IDS[p.style] || 'travis', bpm: p.bpm, voicing: p.voicing ? 'guitarize' : 'played', speed: p.speed, humanize: p.humanize, palm: !!p.palm, pickPos: p.pickPos, capo: p.capo });
+      const roomBpm = () => (p.sync && env && env.bpm ? env.bpm(vt * 1000) : p.bpm);
+      const handOpts = () => ({ mode: MODES[p.mode] || 'pick', style: STYLE_IDS[p.style] || 'travis', bpm: roomBpm(), voicing: p.voicing ? 'guitarize' : 'played', speed: p.speed, humanize: p.humanize, palm: !!p.palm, pickPos: p.pickPos, capo: p.capo });
       function sceneOf() {
         const S = space.AcousticSpace, room = S.ROOMS[ROOMS[p.room]] || S.ROOMS.living, [Lx, Ly] = room.dims;
         const mx = Math.min(1.2, Lx * 0.2), my = Math.min(1.2, Ly * 0.2);
@@ -169,7 +175,25 @@ export default async function (arg, { base }) {
         convF.buffer = mk(bufs[0], bufs[1]); convB.buffer = mk(bufs[2], bufs[3]);
       };
       hand.set(handOpts()); engineParams(null); rebuildRoom();
-      const tick = setInterval(() => run(roomNow() + LEAD + shift), 5);
+      // with the room's tempo on, a pattern starts on the room's beat grid at the right step of the bar, so every
+      // jammer's drums and this guitar agree on where "one" is
+      const RH = hand.hand;
+      if (RH && env && env.beatAt) {
+        const chord0 = RH.chord.bind(RH);
+        RH.chord = (v, vel, t) => {
+          const S = RH.style();
+          if (!p.sync || RH.running || S.gen || !S.sub) return chord0(v, vel, t);
+          const sub = S.sub, beats = S.beats || 4, nb = Math.ceil(env.beatAt(t * 1000) * sub - 1e-6) / sub;
+          RH.v = v; RH.vel = vel; RH.roles = RH.mapRoles(v);
+          RH.running = true; RH.drift = 0; RH.tGrid = env.timeOf(nb) / 1000;
+          RH.step = Math.round((((nb % beats) + beats) % beats) * sub) % RH.len();
+          RH.tick();
+        };
+      }
+
+      const tick = setInterval(() => {
+        run(roomNow() + LEAD + shift);
+      }, 5);
 
       // a MEGAjam event at audio time t with room stamp at (ms). Self-monitored notes (t now, at in the future)
       // are decided at their room time like everyone else's, then played early by the difference.
