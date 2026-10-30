@@ -248,3 +248,9 @@ The analyzer reports per-partial starting level and T60, inharmonicity, spectral
 - Allen & Berkley (1979), image method; De Sena et al. (2015), randomized image method; Barron & Lee (1988), energy relations; Wenmaekers et al. (2014), air absorption.
 - Hodgkinson, Timoney & Lazzarini (2010), tension-modulated steel-string partial tracks, DAFx.
 - Grady, T., *Cracking the Code*: "Yngwie Malmsteen's rotational picking mechanic" (Guitar World) and the Volcano seminar on the six-note pattern (troygrady.com); Guitar Interactive tech session with Yngwie Malmsteen; Premier Guitar, "How Yngwie Malmsteen unleashes the fury" and "Inside the harmonic minor scale"; Vintage Guitar, "Fretprints: Yngwie Malmsteen"; Guitar Player, position shifts and alternate picking; Dunlop YJM 1.5 mm Delrin pick specification.
+
+## Playing Acoustic in MEGAjam
+
+`megajam.json` and `megajam/acoustic.js` make this repo a [MEGAjam](https://github.com/samuelling/JamJam) library, so a band can jam with Acoustic in lockstep: every jammer's browser runs the same guitar from the same timestamped notes. Add `github:samuelling/Acoustic` on MEGAjam's gear wall (or pick Acoustic from its shared studio).
+
+The adapter loads `src/` as it is. To make every browser strum identically, it runs the strumming hand on a virtual clock in the room's shared time (its timers are virtual too), reseeds the hand's random numbers from that time before each step, and seeds every engine event from its room time, so a bandmate who walks in late still hears the same pluck. Detail is fixed at full for everyone, since "eco" would sound different on a slower machine. Parameters: guitar body, hand (pick, fingers, pattern), pattern style and tempo, voicing, strum speed, humanize, palm mute, pick position, capo, string brightness, room, mics, room level, level.

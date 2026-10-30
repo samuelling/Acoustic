@@ -1,0 +1,10 @@
+{
+  "megajam": 1,
+  "id": "acoustic",
+  "name": "Acoustic",
+  "by": "Sam Ling",
+  "private": false,
+  "instruments": [
+    { "id": "guitar", "file": "megajam/acoustic.js", "name": "Acoustic", "family": "Physically modelled acoustic guitar", "blurb": "Six modelled strings on a wooden body, with a strumming hand that voices your chords the way a guitarist would." }
+  ]
+}
